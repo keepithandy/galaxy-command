@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070d" />
+    <title>Galaxy Command</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="hud-top">
+        <div>
+          <p class="eyebrow">GALAXY COMMAND</p>
+          <h1>Strategic Command Interface</h1>
+        </div>
+        <div class="status"><span class="status-dot"></span> LIVE GALAXY</div>
+      </header>
+
+      <aside class="hud-panel planet-panel" aria-live="polite">
+        <div class="panel-header">
+          <span>PLANETARY INTEL</span>
+          <button id="close-panel" type="button" aria-label="Close planet panel">×</button>
+        </div>
+        <div id="planet-content" class="planet-content">
+          <p class="muted">Select a planet to inspect its strategic profile.</p>
+        </div>
+      </aside>
+
+      <div class="hud-bottom">
+        <span id="selection-readout">NO SYSTEM SELECTED</span>
+        <span>DRAG TO ROTATE · SCROLL TO ZOOM · CLICK TO INSPECT</span>
+      </div>
+
+      <div id="loading" class="loading">INITIALIZING GALAXY...</div>
+      <canvas id="galaxy-canvas"></canvas>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
