@@ -3,7 +3,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { evaluateFaction } from '../src/core/ai.js';
-import { createGameState, hydrateGalaxyState, validateGalaxyFactions } from '../src/core/gameState.js';
+import {
+  createGameState,
+  hydrateGalaxyState,
+  parsePopulation,
+  validateGalaxyFactions,
+} from '../src/core/gameState.js';
 
 const galaxyData = JSON.parse(
   await readFile(new URL('../src/data/galaxy.json', import.meta.url), 'utf8')
@@ -28,6 +33,15 @@ test('hydrated planets can be evaluated by each faction', () => {
     assert.equal(evaluation.factionId, factionId);
     assert.ok(evaluation.ownedPlanets > 0);
   }
+
+  assert.equal(Object.keys(state.fleets).length, galaxy.fleets.length);
+  assert.equal(state.fleets['aurora-watch'].systemId, 'solara');
+});
+
+test('population units normalize to millions', () => {
+  assert.equal(parsePopulation('820K'), 0.82);
+  assert.equal(parsePopulation('8.4M'), 8.4);
+  assert.equal(parsePopulation('1.2B'), 1200);
 });
 
 test('hydration rejects unknown planet faction IDs', () => {

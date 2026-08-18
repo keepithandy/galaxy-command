@@ -1,0 +1,24 @@
+.label-layer { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+.galaxy-label { padding: 3px 6px; border: 1px solid #34415699; background: #03050abb; color: #d9e4f3; font: 700 10px/1.2 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; text-shadow: 0 1px 8px #000; opacity: .78; transition: opacity .2s ease, transform .2s ease; }
+.galaxy-label[data-selected='true'] { opacity: 1; transform: scale(1.12); }
+.galaxy-label[data-filtered='true'] { opacity: .16; }
+.galaxy-label[data-faction='aurora'] { color: #75c5ff; border-color: #55b6ff88; }
+.galaxy-label[data-faction='vanguard'] { color: #ff818c; border-color: #ff5f6d88; }
+.galaxy-label[data-faction='independent'] { color: #b5c3d2; border-color: #8ea2b888; }
+.fleet-label { font-size: 8px; letter-spacing: .08em; }
+
+.strategic-toolbar { position: fixed; z-index: 6; top: 82px; left: 28px; display: flex; gap: 10px; align-items: stretch; pointer-events: auto; }
+.strategic-toolbar button { min-height: 34px; padding: 8px 11px; border: 1px solid #344156; background: #070b13e8; color: #9eb0c8; font: 700 9px/1 system-ui, sans-serif; letter-spacing: .12em; cursor: pointer; }
+.strategic-toolbar button:hover, .strategic-toolbar button[aria-pressed='true'] { border-color: #6c86aa; color: #f3f7fd; background: #152033ee; }
+.filter-group { display: flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid #263247; background: #050912d9; }
+.filter-group > span { color: #64748a; font-size: 8px; letter-spacing: .16em; }
+#faction-filters { display: flex; gap: 5px; }
+#faction-filters button { min-height: 26px; padding: 6px 8px; }
+.navigation-status { position: fixed; z-index: 5; top: 130px; left: 28px; padding: 6px 9px; border-left: 2px solid #55b6ff; background: #050912cc; color: #8ea2b8; font-size: 9px; letter-spacing: .12em; pointer-events: none; }
+
+@media (max-width: 720px) {
+  .strategic-toolbar { top: 68px; left: 12px; right: 12px; flex-wrap: wrap; }
+  .filter-group { flex: 1 1 100%; padding: 6px; overflow-x: auto; }
+  #faction-filters { min-width: max-content; }
+  .navigation-status { top: 145px; left: 12px; }
+}

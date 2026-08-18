@@ -16,6 +16,16 @@
         <div class="status"><span class="status-dot"></span> LIVE GALAXY</div>
       </header>
 
+      <nav class="strategic-toolbar" aria-label="Strategic map controls">
+        <button id="galaxy-view" type="button">GALAXY VIEW</button>
+        <div class="filter-group" aria-label="Faction filters">
+          <span>FILTER</span>
+          <div id="faction-filters"></div>
+        </div>
+      </nav>
+
+      <div id="navigation-status" class="navigation-status" aria-live="polite">GALAXY VIEW</div>
+
       <aside class="hud-panel planet-panel" aria-live="polite">
         <div class="panel-header">
           <span>PLANETARY INTEL</span>
@@ -28,11 +38,11 @@
 
       <div class="hud-bottom">
         <span id="selection-readout">NO SYSTEM SELECTED</span>
-        <span>DRAG TO ROTATE · SCROLL TO ZOOM · CLICK TO INSPECT</span>
+        <span>DRAG TO ROTATE · SCROLL TO ZOOM · CLICK TO FOCUS · GALAXY VIEW TO RESET</span>
       </div>
 
       <div id="loading" class="loading">INITIALIZING GALAXY...</div>
-      <canvas id="galaxy-canvas"></canvas>
+      <canvas id="galaxy-canvas" tabindex="0" aria-label="Interactive three-dimensional galaxy map"></canvas>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

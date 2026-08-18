@@ -1,14 +1,33 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import galaxyData from './data/galaxy.json';
-import './styles/main.css';
+import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 
+import { createGameState, hydrateGalaxyState } from './core/gameState.js';
+import galaxyData from './data/galaxy.json';
+import {
+  createLabel,
+  createStrategicMap,
+  factionColor,
+  setLabelState,
+  systemFaction,
+} from './navigation/index.js';
+import './styles/main.css';
+import './styles/strategic-map.css';
+
+const galaxy = galaxyData.galaxy;
+const gameState = hydrateGalaxyState(createGameState(), galaxy);
+const factions = new Map(galaxy.factions.map((faction) => [faction.id, faction]));
+
+const app = document.querySelector('#app');
 const canvas = document.querySelector('#galaxy-canvas');
 const loading = document.querySelector('#loading');
 const panel = document.querySelector('.planet-panel');
 const content = document.querySelector('#planet-content');
 const selectionReadout = document.querySelector('#selection-readout');
+const navigationStatus = document.querySelector('#navigation-status');
 const closePanel = document.querySelector('#close-panel');
+const galaxyViewButton = document.querySelector('#galaxy-view');
+const factionFilters = document.querySelector('#faction-filters');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x03050a);
@@ -21,27 +40,47 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.className = 'label-layer';
+app.appendChild(labelRenderer.domElement);
+
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.minDistance = 10;
+controls.minDistance = 5;
 controls.maxDistance = 90;
 controls.target.set(0, 0, 0);
+
+const strategicMap = createStrategicMap({ camera, controls, scene });
+controls.addEventListener('start', () => strategicMap.cancelTransition());
 
 scene.add(new THREE.AmbientLight(0x667799, 0.7));
 const keyLight = new THREE.PointLight(0xffffff, 2.4, 80);
 scene.add(keyLight);
 
 const selectable = [];
-const systemGroups = [];
+const systemRecords = new Map();
+const planetVisuals = new Map();
+const fleetMarkers = new Map();
 let selected = null;
+
+function createSeededRandom(seed) {
+  let value = seed >>> 0;
+  return () => {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+    return value / 4294967296;
+  };
+}
+
+const random = createSeededRandom(gameState.seed);
 
 function makeStars(count = 1600) {
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i += 1) {
-    const radius = 90 + Math.random() * 150;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+    const radius = 90 + random() * 150;
+    const theta = random() * Math.PI * 2;
+    const phi = Math.acos(2 * random() - 1);
     positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
@@ -63,94 +102,305 @@ function createOrbit(radius) {
   return new THREE.LineLoop(geometry, material);
 }
 
-function createPlanet(planet, system, factionColor) {
+function createPlanet(planet, system) {
+  const statePlanet = gameState.planets[planet.id];
   const geometry = new THREE.SphereGeometry(planet.size, 20, 20);
-  const material = new THREE.MeshStandardMaterial({ color: factionColor, roughness: 0.75, metalness: 0.08 });
+  const material = new THREE.MeshStandardMaterial({
+    color: factionColor(statePlanet.faction, galaxy.factions),
+    roughness: 0.75,
+    metalness: 0.08,
+  });
   const mesh = new THREE.Mesh(geometry, material);
-  const angle = Math.random() * Math.PI * 2;
-  mesh.position.set(Math.cos(angle) * planet.orbit, 0, Math.sin(angle) * planet.orbit);
-  mesh.userData = { planet, system, baseColor: factionColor };
+  const orbitAngle = random() * Math.PI * 2;
+  mesh.position.set(Math.cos(orbitAngle) * planet.orbit, 0, Math.sin(orbitAngle) * planet.orbit);
+  mesh.userData = {
+    type: 'planet',
+    planetId: planet.id,
+    systemId: system.id,
+    orbit: planet.orbit,
+    orbitAngle,
+    orbitSpeed: 0.035 / Math.sqrt(planet.orbit),
+  };
   selectable.push(mesh);
   return mesh;
+}
+
+function createTerritoryRing(system) {
+  const owner = systemFaction(system, gameState.planets);
+  const geometry = new THREE.RingGeometry(6.7, 7.15, 64);
+  const material = new THREE.MeshBasicMaterial({
+    color: factionColor(owner, galaxy.factions),
+    transparent: true,
+    opacity: 0.16,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(geometry, material);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = -0.08;
+  return ring;
 }
 
 function createSystem(system) {
   const group = new THREE.Group();
   group.position.fromArray(system.position);
-  group.userData.system = system;
+  group.userData.systemId = system.id;
 
   const star = new THREE.Mesh(
     new THREE.SphereGeometry(1.25, 24, 24),
     new THREE.MeshBasicMaterial({ color: system.starColor })
   );
+  star.userData = { type: 'system', systemId: system.id };
+  selectable.push(star);
   group.add(star);
 
+  const territory = createTerritoryRing(system);
+  group.add(territory);
+
+  const labelElement = createLabel(system.name);
+  const label = new CSS2DObject(labelElement);
+  label.position.set(0, 2.1, 0);
+  group.add(label);
+
   system.planets.forEach((planet) => {
-    const faction = galaxyData.galaxy.factions.find((item) => item.id === planet.faction);
-    group.add(createOrbit(planet.orbit));
-    group.add(createPlanet(planet, system, faction?.color ?? '#ffffff'));
+    const orbit = createOrbit(planet.orbit);
+    const mesh = createPlanet(planet, system);
+    group.add(orbit);
+    group.add(mesh);
+    planetVisuals.set(planet.id, { mesh, orbit, planet, system });
   });
 
-  systemGroups.push(group);
+  systemRecords.set(system.id, { group, labelElement, star, system, territory });
   scene.add(group);
 }
 
-function showPlanet(mesh) {
+function createFleetMarker(fleet, offsetIndex) {
+  const systemRecord = systemRecords.get(fleet.systemId);
+  if (!systemRecord) return;
+  const color = factionColor(fleet.faction, galaxy.factions);
+  const geometry = new THREE.OctahedronGeometry(0.38, 0);
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.25,
+    roughness: 0.45,
+  });
+  const marker = new THREE.Mesh(geometry, material);
+  marker.position.set(-2.1 + offsetIndex * 0.75, 1.35, -1.5);
+  marker.userData = { type: 'fleet', fleetId: fleet.id, systemId: fleet.systemId };
+  selectable.push(marker);
+  systemRecord.group.add(marker);
+
+  const labelElement = createLabel(fleet.name, 'galaxy-label fleet-label');
+  const label = new CSS2DObject(labelElement);
+  label.position.set(0, 0.7, 0);
+  marker.add(label);
+  fleetMarkers.set(fleet.id, { fleet, labelElement, marker });
+}
+
+function formatPopulation(population) {
+  if (population >= 1000) return `${(population / 1000).toFixed(2)}B`;
+  if (population < 1) return `${Math.round(population * 1000)}K`;
+  return `${population.toFixed(2)}M`;
+}
+
+function factionById(factionId) {
+  return factions.get(factionId) ?? { id: 'neutral', name: 'Unknown', color: '#ffffff' };
+}
+
+function showPlanet(planetId) {
+  const visual = planetVisuals.get(planetId);
+  const planet = gameState.planets[planetId];
+  if (!visual || !planet) return;
   if (selected) selected.scale.setScalar(1);
-  selected = mesh;
-  mesh.scale.setScalar(1.45);
-  const { planet, system } = mesh.userData;
-  const faction = galaxyData.galaxy.factions.find((item) => item.id === planet.faction);
-  selectionReadout.textContent = `${system.name.toUpperCase()} · ${planet.name.toUpperCase()}`;
+  selected = visual.mesh;
+  selected.scale.setScalar(1.45);
+  const faction = factionById(planet.faction);
+  selectionReadout.textContent = `${visual.system.name.toUpperCase()} · ${visual.planet.name.toUpperCase()}`;
   content.innerHTML = `
     <div class="planet-title">
-      <span class="planet-mark" style="background:${faction?.color ?? '#fff'}"></span>
-      <div><p class="eyebrow">PLANETARY INTEL</p><h2>${planet.name}</h2></div>
+      <span class="planet-mark" style="background:${faction.color}"></span>
+      <div><p class="eyebrow">PLANETARY INTEL</p><h2>${visual.planet.name}</h2></div>
     </div>
-    <div class="intel-row"><span>Faction</span><strong>${faction?.name ?? 'Unknown'}</strong></div>
-    <div class="intel-row"><span>Population</span><strong>${planet.population}</strong></div>
+    <div class="intel-row"><span>Faction</span><strong>${faction.name}</strong></div>
+    <div class="intel-row"><span>Population</span><strong>${formatPopulation(planet.population)}</strong></div>
     <div class="stat"><span>Industry</span><b>${planet.industry}</b><i><em style="width:${planet.industry}%"></em></i></div>
     <div class="stat"><span>Resources</span><b>${planet.resources}</b><i><em style="width:${planet.resources}%"></em></i></div>
     <div class="stat"><span>Defense</span><b>${planet.defense}</b><i><em style="width:${planet.defense}%"></em></i></div>
-    <div class="status-large">${planet.status}</div>
+    <div class="status-large">${visual.planet.status}</div>
   `;
   panel.classList.add('open');
 }
 
+function showFleet(fleetId) {
+  const fleet = gameState.fleets[fleetId];
+  const system = galaxy.systems.find((item) => item.id === fleet?.systemId);
+  if (!fleet || !system) return;
+  const faction = factionById(fleet.faction);
+  selectionReadout.textContent = `${system.name.toUpperCase()} · ${fleet.name.toUpperCase()}`;
+  content.innerHTML = `
+    <div class="planet-title">
+      <span class="planet-mark" style="background:${faction.color}"></span>
+      <div><p class="eyebrow">FLEET CONTACT</p><h2>${fleet.name}</h2></div>
+    </div>
+    <div class="intel-row"><span>Faction</span><strong>${faction.name}</strong></div>
+    <div class="intel-row"><span>System</span><strong>${system.name}</strong></div>
+    <div class="intel-row"><span>Strength</span><strong>${fleet.strength}</strong></div>
+    <div class="status-large">${fleet.status}</div>
+  `;
+  panel.classList.add('open');
+}
+
+function syncGalaxyVisuals() {
+  const filter = strategicMap.state.factionFilter;
+  for (const [planetId, visual] of planetVisuals) {
+    const planet = gameState.planets[planetId];
+    const matches = filter === 'all' || planet.faction === filter;
+    visual.mesh.material.color.set(factionColor(planet.faction, galaxy.factions));
+    visual.mesh.visible = matches;
+    visual.orbit.visible = matches;
+  }
+
+  for (const { labelElement, system, territory } of systemRecords.values()) {
+    const owner = systemFaction(system, gameState.planets);
+    const matches = filter === 'all' || owner === filter;
+    territory.material.color.set(factionColor(owner, galaxy.factions));
+    territory.material.opacity = matches ? 0.18 : 0.025;
+    setLabelState(labelElement, {
+      selected: strategicMap.state.selectedSystem === system.id,
+      faction: owner,
+    });
+    labelElement.dataset.filtered = String(!matches);
+  }
+
+  for (const { fleet, labelElement, marker } of fleetMarkers.values()) {
+    const matches = filter === 'all' || fleet.faction === filter;
+    marker.visible = matches;
+    labelElement.dataset.filtered = String(!matches);
+  }
+
+  factionFilters.querySelectorAll('button').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.faction === filter));
+  });
+}
+
+function renderFilterControls() {
+  const options = [{ id: 'all', name: 'All' }, ...galaxy.factions];
+  for (const option of options) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.faction = option.id;
+    button.textContent = option.name;
+    button.setAttribute('aria-pressed', String(option.id === 'all'));
+    button.addEventListener('click', () => strategicMap.setFactionFilter(option.id));
+    factionFilters.appendChild(button);
+  }
+}
+
+function returnToGalaxy() {
+  strategicMap.returnToGalaxy();
+  panel.classList.remove('open');
+  if (selected) selected.scale.setScalar(1);
+  selected = null;
+  selectionReadout.textContent = 'NO SYSTEM SELECTED';
+}
+
+strategicMap.subscribe((state) => {
+  navigationStatus.textContent = state.mode === 'galaxy'
+    ? 'GALAXY VIEW'
+    : `${state.mode.toUpperCase()} · ${(state.selectedPlanet ?? state.selectedSystem).toUpperCase()}`;
+  syncGalaxyVisuals();
+});
+
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+let pointerStart = null;
+
 renderer.domElement.addEventListener('pointerdown', (event) => {
-  pointer.x = (event.clientX / innerWidth) * 2 - 1;
-  pointer.y = -(event.clientY / innerHeight) * 2 + 1;
+  pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+});
+
+renderer.domElement.addEventListener('pointerup', (event) => {
+  if (!pointerStart || pointerStart.id !== event.pointerId) return;
+  const travel = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+  pointerStart = null;
+  if (travel > 6) return;
+
+  const bounds = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+  pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(selectable, false)[0];
-  if (hit) showPlanet(hit.object);
+  const hit = raycaster.intersectObjects(selectable.filter((object) => object.visible), false)[0];
+  if (!hit) return;
+
+  const { type, planetId, systemId, fleetId } = hit.object.userData;
+  if (type === 'planet') {
+    const position = hit.object.getWorldPosition(new THREE.Vector3());
+    showPlanet(planetId);
+    strategicMap.selectPlanet(planetId, systemId, position);
+  } else if (type === 'system') {
+    const record = systemRecords.get(systemId);
+    strategicMap.selectSystem(systemId, record.group.position);
+    panel.classList.remove('open');
+    selectionReadout.textContent = `${record.system.name.toUpperCase()} SYSTEM`;
+  } else if (type === 'fleet') {
+    const record = systemRecords.get(systemId);
+    strategicMap.selectSystem(systemId, record.group.position);
+    showFleet(fleetId);
+  }
+});
+
+renderer.domElement.addEventListener('pointercancel', () => {
+  pointerStart = null;
 });
 
 closePanel.addEventListener('click', () => panel.classList.remove('open'));
+galaxyViewButton.addEventListener('click', returnToGalaxy);
+addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') returnToGalaxy();
+});
 
 function resize() {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
 }
 
 addEventListener('resize', resize);
 makeStars();
-galaxyData.galaxy.systems.forEach(createSystem);
+galaxy.systems.forEach(createSystem);
+Object.values(gameState.fleets).forEach(createFleetMarker);
+renderFilterControls();
+syncGalaxyVisuals();
 loading.classList.add('hidden');
+
+const clock = new THREE.Clock();
+const trackedPosition = new THREE.Vector3();
 
 function animate() {
   requestAnimationFrame(animate);
-  systemGroups.forEach((group) => {
-    group.children.forEach((child) => {
-      if (child.userData?.planet) {
-        child.rotation.y += 0.002;
-      }
-    });
-  });
+  const delta = Math.min(clock.getDelta(), 0.05);
+
+  for (const { mesh } of planetVisuals.values()) {
+    mesh.userData.orbitAngle += mesh.userData.orbitSpeed * delta;
+    mesh.position.set(
+      Math.cos(mesh.userData.orbitAngle) * mesh.userData.orbit,
+      0,
+      Math.sin(mesh.userData.orbitAngle) * mesh.userData.orbit
+    );
+    mesh.rotation.y += 0.35 * delta;
+  }
+
+  if (strategicMap.state.mode === 'planet') {
+    planetVisuals.get(strategicMap.state.selectedPlanet)?.mesh.getWorldPosition(trackedPosition);
+    strategicMap.trackPosition(trackedPosition);
+  }
+
+  strategicMap.update();
   controls.update();
   renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
 }
 
 animate();

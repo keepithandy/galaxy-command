@@ -4,7 +4,7 @@ A browser-based 3D galaxy strategy game built around direct interaction with a l
 
 ## Current milestone
 
-The repository now contains the Phase 1 interactive 3D galaxy foundation plus the shared architecture for the long-term 19-phase strategy game: versioned state, deterministic simulation, diplomacy, economy, fleets, armies, technology, intelligence/events, AI decision foundations, and browser save persistence.
+The repository now contains the Phase 1 interactive 3D galaxy foundation and the Phase 2 navigation/strategic-map milestone. Players can move between galaxy, system, and planet focus; inspect state-driven planet and fleet data; use faction filters; and read territory ownership directly from the map. Shared foundations also exist for simulation, diplomacy, economy, military, technology, events, AI, and browser persistence.
 
 The architecture is deliberately data-driven so the visible galaxy can remain the primary command surface as deeper systems are implemented.
 
@@ -48,6 +48,7 @@ Core modules currently include:
 - `src/core/technology.js` — research tree and prerequisites
 - `src/core/events.js` — dynamic events and intelligence-event hooks
 - `src/core/save.js` — versioned browser save slots
+- `src/navigation/` — strategic navigation state, faction territories, and map labels
 - `docs/ROADMAP.md` — complete 19-phase product roadmap
 
 ## 19-phase roadmap

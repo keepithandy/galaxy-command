@@ -9,6 +9,7 @@
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { background: #03050a; }
 #galaxy-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#galaxy-canvas:focus-visible { outline: 2px solid #55b6ff; outline-offset: -3px; }
 
 .hud-top, .hud-bottom, .hud-panel, .loading { position: fixed; z-index: 5; }
 .hud-top { inset: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 28px; pointer-events: none; background: linear-gradient(#03050acc, transparent); }
@@ -43,6 +44,6 @@ body { background: #03050a; }
 @media (max-width: 640px) {
   .hud-top { padding: 18px; }
   .status { display: none; }
-  .hud-panel { top: 84px; right: 12px; width: calc(100vw - 24px); }
+  .hud-panel { top: 188px; right: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 250px); overflow-y: auto; }
   .hud-bottom { flex-direction: column; gap: 6px; padding: 10px 12px; }
 }
