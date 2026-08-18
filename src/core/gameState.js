@@ -1,4 +1,5 @@
 export const GAME_STATE_VERSION = 1;
+export const PLAYER_FACTION_ID = 'aurora';
 
 export function createGameState(seed = 1337) {
   return {
@@ -6,11 +7,11 @@ export function createGameState(seed = 1337) {
     seed,
     turn: 1,
     year: 1,
-    playerFaction: 'frontier-union',
+    playerFaction: PLAYER_FACTION_ID,
     factions: {
-      'frontier-union': { credits: 1000, research: 0, reputation: 0, atWar: [] },
-      'iron-dominion': { credits: 1000, research: 0, reputation: -10, atWar: [] },
-      'free-worlds': { credits: 1000, research: 0, reputation: 10, atWar: [] },
+      independent: { credits: 1000, research: 0, reputation: 10, atWar: [] },
+      aurora: { credits: 1000, research: 0, reputation: 0, atWar: [] },
+      vanguard: { credits: 1000, research: 0, reputation: -10, atWar: [] },
     },
     planets: {},
     fleets: {},
@@ -22,7 +23,27 @@ export function createGameState(seed = 1337) {
   };
 }
 
+export function validateGalaxyFactions(state, galaxy) {
+  if (!state.factions[state.playerFaction]) {
+    throw new Error(`Unknown player faction: ${state.playerFaction}`);
+  }
+
+  const unknownFactionIds = new Set();
+  for (const system of galaxy.systems) {
+    for (const planet of system.planets) {
+      if (!state.factions[planet.faction]) unknownFactionIds.add(planet.faction);
+    }
+  }
+
+  if (unknownFactionIds.size > 0) {
+    throw new Error(`Unknown galaxy faction IDs: ${[...unknownFactionIds].join(', ')}`);
+  }
+
+  return true;
+}
+
 export function hydrateGalaxyState(state, galaxy) {
+  validateGalaxyFactions(state, galaxy);
   const next = structuredClone(state);
   for (const system of galaxy.systems) {
     for (const planet of system.planets) {
