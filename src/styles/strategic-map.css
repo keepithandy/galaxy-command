@@ -1,0 +1,8 @@
+.galaxy-label { pointer-events: none; font: 600 12px/1.2 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 8px #000; opacity: .82; }
+.galaxy-label[data-selected='true'] { opacity: 1; font-size: 14px; }
+.galaxy-label[data-faction='dominion'] { color: #f87171; }
+.galaxy-label[data-faction='federation'] { color: #a3e635; }
+.galaxy-label[data-faction='player'] { color: #67e8f9; }
+.galaxy-label[data-faction='independent'] { color: #fbbf24; }
+.strategic-toolbar { display: flex; gap: .5rem; align-items: center; }
+.strategic-toolbar button { cursor: pointer; }
