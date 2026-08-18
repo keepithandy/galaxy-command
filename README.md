@@ -2,6 +2,8 @@
 
 A browser-based 3D galaxy strategy game built around direct interaction with a living strategic map.
 
+Current build: `0.0.1d`
+
 ## Current milestone
 
 The repository now contains the Phase 1 interactive 3D galaxy foundation and the Phase 2 navigation/strategic-map milestone. Players can move between galaxy, system, and planet focus; inspect state-driven planet and fleet data; use faction filters; and read territory ownership directly from the map. Shared foundations also exist for simulation, diplomacy, economy, military, technology, events, AI, and browser persistence.

@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 
 import { createGameState, hydrateGalaxyState } from './core/gameState.js';
+import { GAME_VERSION, VERSION_CACHE_KEY } from './config/buildInfo.js';
 import galaxyData from './data/galaxy.json';
 import {
   createLabel,
@@ -29,6 +30,17 @@ const navigationStatus = document.querySelector('#navigation-status');
 const closePanel = document.querySelector('#close-panel');
 const galaxyViewButton = document.querySelector('#galaxy-view');
 const factionFilters = document.querySelector('#faction-filters');
+const gameVersion = document.querySelector('#game-version');
+
+document.title = `Galaxy Command · ${GAME_VERSION}`;
+document.documentElement.dataset.gameVersion = GAME_VERSION;
+gameVersion.textContent = `v${GAME_VERSION}`;
+
+try {
+  localStorage.setItem(VERSION_CACHE_KEY, GAME_VERSION);
+} catch {
+  // The game does not require storage access to run.
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x03050a);
