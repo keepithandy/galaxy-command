@@ -1,6 +1,21 @@
 export const GAME_STATE_VERSION = 1;
 export const PLAYER_FACTION_ID = 'aurora';
 
+const POPULATION_SCALE = Object.freeze({
+  K: 0.001,
+  M: 1,
+  B: 1000,
+});
+
+export function parsePopulation(value) {
+  if (Number.isFinite(value)) return value;
+  const match = String(value).trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([KMB])?$/i);
+  if (!match) return 1;
+  const amount = Number.parseFloat(match[1]);
+  const unit = match[2]?.toUpperCase();
+  return Number((amount * (POPULATION_SCALE[unit] ?? 1)).toFixed(3));
+}
+
 export function createGameState(seed = 1337) {
   return {
     version: GAME_STATE_VERSION,
@@ -51,7 +66,7 @@ export function hydrateGalaxyState(state, galaxy) {
         id: planet.id,
         systemId: system.id,
         faction: planet.faction,
-        population: Number.parseFloat(String(planet.population).replace(/[^0-9.]/g, '')) || 1,
+        population: parsePopulation(planet.population),
         industry: planet.industry,
         resources: planet.resources,
         defense: planet.defense,
@@ -62,6 +77,14 @@ export function hydrateGalaxyState(state, galaxy) {
       };
     }
   }
+
+  for (const fleet of galaxy.fleets ?? []) {
+    if (!next.factions[fleet.faction]) {
+      throw new Error(`Unknown fleet faction ID: ${fleet.faction}`);
+    }
+    next.fleets[fleet.id] ??= structuredClone(fleet);
+  }
+
   return next;
 }
 

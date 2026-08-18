@@ -6,6 +6,11 @@
       { "id": "aurora", "name": "Aurora Compact", "color": "#55b6ff" },
       { "id": "vanguard", "name": "Vanguard Directorate", "color": "#ff5f6d" }
     ],
+    "fleets": [
+      { "id": "aurora-watch", "name": "Aurora Watch", "faction": "aurora", "systemId": "solara", "strength": 36, "status": "PATROL" },
+      { "id": "free-rovers", "name": "Free Rovers", "faction": "independent", "systemId": "veyra", "strength": 18, "status": "HOLDING" },
+      { "id": "vanguard-spear", "name": "Vanguard Spear", "faction": "vanguard", "systemId": "draconis", "strength": 48, "status": "READY" }
+    ],
     "systems": [
       {"id":"solara","name":"Solara","position":[-18,3,4],"starColor":"#fff1b0","planets":[{"id":"solara-prime","name":"Solara Prime","orbit":3.2,"size":0.65,"faction":"aurora","population":"8.4M","industry":82,"resources":71,"defense":64,"status":"CONTROLLED"},{"id":"solara-ii","name":"Solara II","orbit":5.1,"size":0.42,"faction":"aurora","population":"2.1M","industry":55,"resources":89,"defense":32,"status":"CONTROLLED"}]},
       {"id":"veyra","name":"Veyra","position":[0,0,0],"starColor":"#b8d8ff","planets":[{"id":"veyra","name":"Veyra","orbit":3.6,"size":0.72,"faction":"independent","population":"4.2M","industry":62,"resources":78,"defense":34,"status":"NEUTRAL"},{"id":"veyra-minor","name":"Veyra Minor","orbit":5.7,"size":0.35,"faction":"independent","population":"820K","industry":28,"resources":66,"defense":18,"status":"NEUTRAL"}]},

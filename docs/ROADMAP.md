@@ -10,6 +10,8 @@ Three.js/Vite renderer, starfield, star systems, orbiting planets, data-driven p
 ### Phase 2 — Galaxy Navigation & Strategic Map
 System focus, galaxy/system/planet camera transitions, labels, faction territory overlays, fleet markers, trade routes, strategic filters, and navigation state.
 
+**Status:** Phase 2A navigation and the Phase 2B strategic-map foundation are delivered. Trade-route rendering and simulation-backed fleet movement remain dependent on Phases 5 and 6.
+
 ### Phase 3 — Galaxy Data & World Simulation
 Persistent world state, turn/time progression, population, resources, industry, stability, development, procedural generation, and deterministic simulation ticks.
 
@@ -68,3 +70,7 @@ Authoritative server architecture, shared galaxy state, player empires, diplomac
 ## Release Gate
 
 A 1.0 release requires the single-player simulation to be deterministic enough for saves/replays, a stable tutorial, balanced economy/military/AI loops, performance validation, browser compatibility, error recovery, and a documented save schema. Multiplayer remains a separate server-backed deployment concern and is not treated as complete merely because client interfaces exist.
+
+## Continuous Delivery Gates
+
+Every phase must preserve the production build, automated core tests, keyboard-accessible controls, responsive layout, state/save compatibility, and deterministic gameplay behavior. Persistence, accessibility, performance, and error handling evolve with the game rather than waiting for their later expansion phases.
