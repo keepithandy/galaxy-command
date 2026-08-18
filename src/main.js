@@ -11,6 +11,7 @@ import {
   setLabelState,
   systemFaction,
 } from './navigation/index.js';
+import { createGalaxyBackdrop, createSystemHalo } from './visuals/galaxyBackdrop.js';
 import './styles/main.css';
 import './styles/strategic-map.css';
 
@@ -31,14 +32,16 @@ const factionFilters = document.querySelector('#faction-filters');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x03050a);
-scene.fog = new THREE.FogExp2(0x03050a, 0.0035);
+scene.fog = new THREE.FogExp2(0x03050a, 0.0022);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 18, 36);
+camera.position.set(0, 40, 64);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
 
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.setSize(innerWidth, innerHeight);
@@ -49,7 +52,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.minDistance = 5;
-controls.maxDistance = 90;
+controls.maxDistance = 115;
 controls.target.set(0, 0, 0);
 
 const strategicMap = createStrategicMap({ camera, controls, scene });
@@ -74,22 +77,8 @@ function createSeededRandom(seed) {
 }
 
 const random = createSeededRandom(gameState.seed);
-
-function makeStars(count = 1600) {
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i += 1) {
-    const radius = 90 + random() * 150;
-    const theta = random() * Math.PI * 2;
-    const phi = Math.acos(2 * random() - 1);
-    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = radius * Math.cos(phi);
-    positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const material = new THREE.PointsMaterial({ color: 0xaeb9cc, size: 0.12, transparent: true, opacity: 0.8 });
-  scene.add(new THREE.Points(geometry, material));
-}
+const galaxyBackdrop = createGalaxyBackdrop(random);
+scene.add(galaxyBackdrop.group);
 
 function createOrbit(radius) {
   const points = [];
@@ -147,12 +136,15 @@ function createSystem(system) {
   group.userData.systemId = system.id;
 
   const star = new THREE.Mesh(
-    new THREE.SphereGeometry(1.25, 24, 24),
-    new THREE.MeshBasicMaterial({ color: system.starColor })
+    new THREE.SphereGeometry(0.74, 24, 24),
+    new THREE.MeshBasicMaterial({ color: system.starColor, toneMapped: false })
   );
   star.userData = { type: 'system', systemId: system.id };
   selectable.push(star);
   group.add(star);
+
+  const halo = createSystemHalo(galaxyBackdrop.glowTexture, system.starColor);
+  group.add(halo);
 
   const territory = createTerritoryRing(system);
   group.add(territory);
@@ -170,7 +162,7 @@ function createSystem(system) {
     planetVisuals.set(planet.id, { mesh, orbit, planet, system });
   });
 
-  systemRecords.set(system.id, { group, labelElement, star, system, territory });
+  systemRecords.set(system.id, { group, labelElement, star, halo, system, territory });
   scene.add(group);
 }
 
@@ -253,21 +245,29 @@ function showFleet(fleetId) {
 
 function syncGalaxyVisuals() {
   const filter = strategicMap.state.factionFilter;
+  const focusedSystem = strategicMap.state.selectedSystem;
+  const isGalaxyView = strategicMap.state.mode === 'galaxy';
   for (const [planetId, visual] of planetVisuals) {
     const planet = gameState.planets[planetId];
     const matches = filter === 'all' || planet.faction === filter;
     visual.mesh.material.color.set(factionColor(planet.faction, galaxy.factions));
-    visual.mesh.visible = matches;
-    visual.orbit.visible = matches;
+    const inFocusedSystem = visual.system.id === focusedSystem;
+    visual.mesh.visible = matches && !isGalaxyView && inFocusedSystem;
+    visual.orbit.visible = matches && !isGalaxyView && inFocusedSystem;
   }
 
-  for (const { labelElement, system, territory } of systemRecords.values()) {
+  for (const { labelElement, system, territory, star, halo } of systemRecords.values()) {
     const owner = systemFaction(system, gameState.planets);
     const matches = filter === 'all' || owner === filter;
+    const isFocused = focusedSystem === system.id;
     territory.material.color.set(factionColor(owner, galaxy.factions));
-    territory.material.opacity = matches ? 0.18 : 0.025;
+    territory.material.opacity = isFocused ? 0.2 : (matches ? 0.045 : 0.012);
+    territory.visible = !isGalaxyView || matches;
+    star.scale.setScalar(isFocused ? 1.55 : 1);
+    halo.material.opacity = matches ? (isFocused ? 1 : 0.72) : 0.14;
+    halo.scale.setScalar(isFocused ? 6.2 : 4.6);
     setLabelState(labelElement, {
-      selected: strategicMap.state.selectedSystem === system.id,
+      selected: isFocused,
       faction: owner,
     });
     labelElement.dataset.filtered = String(!matches);
@@ -275,7 +275,7 @@ function syncGalaxyVisuals() {
 
   for (const { fleet, labelElement, marker } of fleetMarkers.values()) {
     const matches = filter === 'all' || fleet.faction === filter;
-    marker.visible = matches;
+    marker.visible = matches && !isGalaxyView && fleet.systemId === focusedSystem;
     labelElement.dataset.filtered = String(!matches);
   }
 
@@ -368,7 +368,6 @@ function resize() {
 }
 
 addEventListener('resize', resize);
-makeStars();
 galaxy.systems.forEach(createSystem);
 Object.values(gameState.fleets).forEach(createFleetMarker);
 renderFilterControls();
@@ -381,6 +380,7 @@ const trackedPosition = new THREE.Vector3();
 function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
+  const elapsed = clock.elapsedTime;
 
   for (const { mesh } of planetVisuals.values()) {
     mesh.userData.orbitAngle += mesh.userData.orbitSpeed * delta;
@@ -399,6 +399,7 @@ function animate() {
 
   strategicMap.update();
   controls.update();
+  galaxyBackdrop.update(elapsed);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }

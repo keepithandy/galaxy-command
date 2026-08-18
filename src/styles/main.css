@@ -7,12 +7,12 @@
 
 * { box-sizing: border-box; }
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-body { background: #03050a; }
+body { background: radial-gradient(circle at 50% 45%, #111b3a 0%, #060914 34%, #020309 75%); }
 #galaxy-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #galaxy-canvas:focus-visible { outline: 2px solid #55b6ff; outline-offset: -3px; }
 
 .hud-top, .hud-bottom, .hud-panel, .loading { position: fixed; z-index: 5; }
-.hud-top { inset: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 28px; pointer-events: none; background: linear-gradient(#03050acc, transparent); }
+.hud-top { inset: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 28px; pointer-events: none; background: linear-gradient(#03050ae8, #03050a88 58%, transparent); }
 .hud-top h1 { margin: 3px 0 0; font-size: clamp(18px, 2vw, 28px); font-weight: 600; letter-spacing: -.02em; }
 .eyebrow { margin: 0; color: #8ea2b8; font-size: 10px; font-weight: 700; letter-spacing: .16em; }
 .status { padding: 8px 11px; border: 1px solid #344156; background: #070b13dd; color: #9eb0c8; font-size: 10px; letter-spacing: .12em; }
