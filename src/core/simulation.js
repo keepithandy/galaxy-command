@@ -1,6 +1,7 @@
 import { assertStateInvariants, recordEvent } from './gameState.js';
 import { createSeededRandom } from './galaxyGeneration.js';
 import { advanceFleetMovement } from './fleetMovement.js';
+import { advanceDiplomacy, setWarState } from './diplomacy.js';
 
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
@@ -20,7 +21,7 @@ export function simulateTurn(state) {
   assertStateInvariants(state);
   state.turn += 1;
   state.year = Math.floor((state.turn - 1) / 12) + 1;
-  const report = { turn: state.turn, year: state.year, planetsUpdated: [], factionIncome: {}, fleetsMoved: [] };
+  const report = { turn: state.turn, year: state.year, planetsUpdated: [], factionIncome: {}, fleetsMoved: [], diplomacyUpdated: [] };
 
   for (const planet of Object.values(state.planets).sort((left, right) => left.id.localeCompare(right.id))) {
     const random = planetRandom(state, planet.id);
@@ -60,6 +61,7 @@ export function simulateTurn(state) {
   }
 
   report.fleetsMoved = advanceFleetMovement(state);
+  report.diplomacyUpdated = advanceDiplomacy(state);
 
   recordEvent(state, 'TURN_ADVANCED', { year: state.year });
   state.history.push({ turn: state.turn, year: state.year });
@@ -81,16 +83,5 @@ export function transferPlanet(state, planetId, factionId) {
 }
 
 export function setWar(state, factionA, factionB, active = true) {
-  if (!state.factions[factionA] || !state.factions[factionB] || factionA === factionB) return false;
-  const listA = state.factions[factionA].atWar;
-  const listB = state.factions[factionB].atWar;
-  if (active) {
-    if (!listA.includes(factionB)) listA.push(factionB);
-    if (!listB.includes(factionA)) listB.push(factionA);
-  } else {
-    state.factions[factionA].atWar = listA.filter((id) => id !== factionB);
-    state.factions[factionB].atWar = listB.filter((id) => id !== factionA);
-  }
-  recordEvent(state, active ? 'WAR_DECLARED' : 'PEACE_SIGNED', { factionA, factionB });
-  return true;
+  return setWarState(state, factionA, factionB, active);
 }

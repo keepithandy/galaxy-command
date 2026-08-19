@@ -1,4 +1,6 @@
-export const GAME_STATE_VERSION = 2;
+import { assertDiplomacyInvariants, createDiplomacyState, ensureDiplomacyState } from './diplomacy.js';
+
+export const GAME_STATE_VERSION = 3;
 export const PLAYER_FACTION_ID = 'aurora';
 
 const POPULATION_SCALE = Object.freeze({
@@ -17,22 +19,23 @@ export function parsePopulation(value) {
 }
 
 export function createGameState(seed = 1337) {
+  const factions = {
+    independent: { credits: 1000, research: 0, reputation: 10, atWar: [] },
+    aurora: { credits: 1000, research: 0, reputation: 0, atWar: [] },
+    vanguard: { credits: 1000, research: 0, reputation: -10, atWar: [] },
+  };
   return {
     version: GAME_STATE_VERSION,
     seed: Number(seed) >>> 0,
     turn: 1,
     year: 1,
     playerFaction: PLAYER_FACTION_ID,
-    factions: {
-      independent: { credits: 1000, research: 0, reputation: 10, atWar: [] },
-      aurora: { credits: 1000, research: 0, reputation: 0, atWar: [] },
-      vanguard: { credits: 1000, research: 0, reputation: -10, atWar: [] },
-    },
+    factions,
     planets: {},
     fleets: {},
     armies: {},
     technologies: {},
-    diplomacy: {},
+    diplomacy: createDiplomacyState(factions),
     events: [],
     history: [],
     lastTurnReport: null,
@@ -95,6 +98,7 @@ export function hydrateGalaxyState(state, galaxy) {
     next.fleets[fleet.id].lastMovementEvent ??= null;
   }
 
+  ensureDiplomacyState(next);
   assertStateInvariants(next);
   return next;
 }
@@ -116,6 +120,8 @@ export function assertStateInvariants(state) {
     assertRange(faction.research, `${factionId} research`);
     if (!Array.isArray(faction.atWar)) throw new Error(`Invalid war list for faction ${factionId}`);
   }
+
+  assertDiplomacyInvariants(state);
 
   for (const [planetId, planet] of Object.entries(state.planets)) {
     if (planet.id !== planetId) throw new Error(`Planet key mismatch: ${planetId}`);

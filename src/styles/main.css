@@ -43,6 +43,19 @@ body { background: radial-gradient(circle at 50% 45%, #111b3a 0%, #060914 34%, #
 .fleet-route button { cursor: pointer; }
 .fleet-route button:hover:not(:disabled), .fleet-route button:focus-visible { border-color: #6cbbff; background: #172b45; }
 .fleet-route button:disabled, .fleet-route select:disabled { cursor: not-allowed; opacity: .5; }
+.diplomacy-list { display: grid; gap: 12px; margin-top: 14px; }
+.diplomacy-card { padding: 12px; border: 1px solid #263247; background: #090f1a; }
+.diplomacy-faction { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px; }
+.diplomacy-faction .planet-mark { width: 8px; height: 22px; }
+.diplomacy-faction strong { font-size: 12px; }
+.diplomacy-faction b { color: #9eb0c8; font-size: 9px; letter-spacing: .12em; }
+.relationship-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 10px; }
+.relationship-stats span { color: #738197; font-size: 9px; text-transform: uppercase; }
+.relationship-stats b { display: block; margin-top: 3px; color: #dce7f5; font-size: 12px; }
+.diplomacy-actions { display: grid; gap: 6px; margin-top: 11px; }
+.diplomacy-actions button { min-height: 30px; padding: 7px 9px; border: 1px solid #344156; color: #c7d4e5; background: #111b2a; font: 700 9px/1 system-ui, sans-serif; letter-spacing: .07em; cursor: pointer; }
+.diplomacy-actions button:hover:not(:disabled), .diplomacy-actions button:focus-visible { border-color: #6cbbff; background: #172b45; }
+.diplomacy-actions button:disabled { cursor: not-allowed; opacity: .45; }
 
 .hud-bottom { inset: auto 0 0; display: flex; justify-content: space-between; gap: 20px; padding: 13px 18px; border-top: 1px solid #1a2331; background: #03050ae6; color: #8ea2b8; font-size: 9px; letter-spacing: .12em; }
 #selection-readout { color: #a7b5c8; }

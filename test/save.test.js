@@ -42,15 +42,43 @@ test.beforeEach(() => {
 test('migrates a version 1 state to the current save schema', () => {
   const legacy = makeState(11);
   legacy.version = 1;
+  delete legacy.diplomacy;
   delete legacy.lastTurnReport;
   delete legacy.planets[Object.keys(legacy.planets)[0]].development;
   delete legacy.fleets[Object.keys(legacy.fleets)[0]].movementStatus;
 
   const migrated = migrateSave(JSON.stringify(legacy));
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, 3);
   assert.ok(migrated.lastTurnReport === null);
   assert.ok(Number.isFinite(Object.values(migrated.planets)[0].development));
   assert.equal(Object.values(migrated.fleets)[0].movementStatus, 'IDLE');
+  assert.equal(Object.keys(migrated.diplomacy).length, 3);
+});
+
+test('migrates a version 2 envelope into bilateral diplomacy state', () => {
+  const legacy = makeState(17);
+  legacy.version = 2;
+  legacy.diplomacy = {};
+  const migrated = migrateSave({ schemaVersion: 2, state: legacy });
+
+  assert.equal(migrated.version, 3);
+  assert.equal(Object.keys(migrated.diplomacy).length, 3);
+  assert.equal(migrated.diplomacy['aurora::vanguard'].stance, 'NEUTRAL');
+});
+
+test('loads and migrates a legacy recovery copy when its committed save is missing', () => {
+  const legacy = makeState(19);
+  legacy.version = 2;
+  legacy.diplomacy = {};
+  localStorage.setItem('galaxy-command-save-v2:autosave:recovery', JSON.stringify({
+    schemaVersion: 2,
+    state: legacy,
+  }));
+
+  const migrated = loadGame();
+  assert.equal(migrated.version, 3);
+  assert.equal(migrated.seed, 19);
+  assert.equal(Object.keys(migrated.diplomacy).length, 3);
 });
 
 test('save and load round-trip through a versioned envelope', () => {
@@ -59,7 +87,7 @@ test('save and load round-trip through a versioned envelope', () => {
   const key = saveGame(state, 'manual');
   const loaded = loadGame('manual');
 
-  assert.equal(key, 'galaxy-command-save-v2:manual');
+  assert.equal(key, 'galaxy-command-save-v3:manual');
   assert.equal(loaded.turn, state.turn);
   assert.deepEqual(loaded.planets, state.planets);
 });
@@ -74,7 +102,7 @@ test('autosave preserves the previous valid copy for recovery', () => {
   assert.equal(loadGame().turn, 2);
   assert.equal(loadRecoveryGame().turn, 1);
 
-  localStorage.setItem('galaxy-command-save-v2:autosave', '{broken');
+  localStorage.setItem('galaxy-command-save-v3:autosave', '{broken');
   assert.equal(loadGame().turn, 1);
 });
 
@@ -83,7 +111,7 @@ test('a failed autosave does not overwrite the last known-good save', () => {
   saveGame(first);
   const second = makeState(37);
   simulateTurn(second);
-  localStorage.failedSetKey = 'galaxy-command-save-v2:autosave';
+  localStorage.failedSetKey = 'galaxy-command-save-v3:autosave';
 
   assert.throws(() => saveGame(second), SaveError);
   localStorage.failedSetKey = null;
@@ -92,7 +120,7 @@ test('a failed autosave does not overwrite the last known-good save', () => {
 });
 
 test('corrupt saves report a recoverable error when no valid copy exists', () => {
-  localStorage.setItem('galaxy-command-save-v2:autosave', '{broken');
+  localStorage.setItem('galaxy-command-save-v3:autosave', '{broken');
 
   assert.throws(
     () => loadGame(),

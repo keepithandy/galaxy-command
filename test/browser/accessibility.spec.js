@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 
 test('command HUD has no serious or critical accessibility violations', async ({ page }) => {
   await page.goto('/');
+  await page.locator('#diplomacy-view').click();
   const results = await new AxeBuilder({ page }).analyze();
   const seriousViolations = results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact));
   expect(seriousViolations).toEqual([]);

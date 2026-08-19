@@ -6,6 +6,12 @@ import { createGameState, hydrateGalaxyState } from './core/gameState.js';
 import { generateGalaxy } from './core/galaxyGeneration.js';
 import { simulateTurn } from './core/simulation.js';
 import { assignFleetDestination, getReachableSystemIds } from './core/fleetMovement.js';
+import {
+  canPerformDiplomaticAction,
+  DIPLOMATIC_ACTIONS,
+  getRelationship,
+  performDiplomaticAction,
+} from './core/diplomacy.js';
 import { exportSave, importSave, loadGame, SaveError, saveGame } from './core/save.js';
 import { GAME_VERSION, VERSION_CACHE_KEY } from './config/buildInfo.js';
 import galaxyData from './data/galaxy.json';
@@ -34,8 +40,10 @@ const content = document.querySelector('#planet-content');
 const selectionReadout = document.querySelector('#selection-readout');
 const navigationStatus = document.querySelector('#navigation-status');
 const closePanel = document.querySelector('#close-panel');
+const panelHeading = document.querySelector('#panel-heading');
 const galaxyViewButton = document.querySelector('#galaxy-view');
 const advanceTurnButton = document.querySelector('#advance-turn');
+const diplomacyViewButton = document.querySelector('#diplomacy-view');
 const saveGameButton = document.querySelector('#save-game');
 const loadGameButton = document.querySelector('#load-game');
 const exportGameButton = document.querySelector('#export-game');
@@ -295,6 +303,7 @@ function closeInspectionPanel({ restoreFocus = true } = {}) {
   if (restoreFocus && wasOpen && lastFocusedElement?.isConnected) {
     lastFocusedElement.focus({ preventScroll: true });
   }
+  delete panel.dataset.mode;
   lastFocusedElement = null;
 }
 
@@ -306,6 +315,8 @@ function showPlanet(planetId) {
   selected = visual.mesh;
   selected.scale.setScalar(1.45);
   const faction = factionById(planet.faction);
+  panel.dataset.mode = 'planet';
+  panelHeading.textContent = 'PLANETARY INTEL';
   selectionReadout.textContent = `${visual.system.name.toUpperCase()} · ${visual.planet.name.toUpperCase()}`;
   content.innerHTML = `
     <div class="planet-title">
@@ -320,7 +331,7 @@ function showPlanet(planetId) {
     <div class="stat"><span>Development</span><b>${planet.development.toFixed(1)}</b><i><em style="width:${planet.development}%"></em></i></div>
     <div class="status-large">${visual.planet.status}</div>
   `;
-  panel.classList.add('open');
+  openInspectionPanel();
 }
 
 function showFleet(fleetId) {
@@ -338,6 +349,8 @@ function showFleet(fleetId) {
     ? reachableSystems.map((item) => `<option value="${item.id}">${item.name}</option>`).join('')
     : '<option value="">No reachable systems</option>';
   const movementStatus = fleet.movementStatus === 'IDLE' ? fleet.status : fleet.movementStatus;
+  panel.dataset.mode = 'fleet';
+  panelHeading.textContent = 'FLEET INTEL';
   selectionReadout.textContent = `${system.name.toUpperCase()} · ${fleet.name.toUpperCase()}`;
   content.innerHTML = `
     <div class="planet-title">
@@ -368,6 +381,66 @@ function showFleet(fleetId) {
       syncGalaxyVisuals();
       showFleet(fleetId);
     }
+  });
+}
+
+function diplomaticActionReason(availability) {
+  if (availability.reason === 'AT_WAR') return 'Unavailable during war';
+  if (availability.reason === 'INSUFFICIENT_CREDITS') return 'Insufficient credits';
+  if (availability.reason === 'COOLDOWN') return `Available in ${availability.turnsRemaining} turn(s)`;
+  return availability.allowed ? '' : 'Unavailable';
+}
+
+function showDiplomacy() {
+  panel.dataset.mode = 'diplomacy';
+  panelHeading.textContent = 'DIPLOMATIC COMMAND';
+  selectionReadout.textContent = 'DIPLOMATIC COMMAND';
+  const playerFaction = factionById(gameState.playerFaction);
+  const targets = galaxy.factions.filter((faction) => faction.id !== gameState.playerFaction);
+  content.innerHTML = `
+    <div class="planet-title">
+      <span class="planet-mark" style="background:${playerFaction.color}"></span>
+      <div><p class="eyebrow">FOREIGN RELATIONS</p><h2>${playerFaction.name}</h2></div>
+    </div>
+    <div class="intel-row"><span>Treasury</span><strong>${Math.floor(gameState.factions[gameState.playerFaction].credits)} CR</strong></div>
+    <div class="diplomacy-list">
+      ${targets.map((target) => {
+        const relationship = getRelationship(gameState, gameState.playerFaction, target.id);
+        const actions = Object.entries(DIPLOMATIC_ACTIONS).map(([actionId, action]) => {
+          const availability = canPerformDiplomaticAction(gameState, gameState.playerFaction, target.id, actionId);
+          const reason = diplomaticActionReason(availability);
+          return `<button type="button" data-diplomacy-action="${actionId}" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${reason}">${action.label}${action.cost ? ` · ${action.cost} CR` : ''}</button>`;
+        }).join('');
+        return `
+          <section class="diplomacy-card" data-relationship="${target.id}">
+            <div class="diplomacy-faction"><span class="planet-mark" style="background:${target.color}"></span><strong>${target.name}</strong><b>${relationship.stance}</b></div>
+            <div class="relationship-stats">
+              <span>Opinion <b>${relationship.opinion}</b></span>
+              <span>Trust <b>${relationship.trust}</b></span>
+              <span>Threat <b>${relationship.threat}</b></span>
+            </div>
+            <div class="diplomacy-actions">${actions}</div>
+          </section>
+        `;
+      }).join('')}
+    </div>
+  `;
+  openInspectionPanel();
+  content.querySelectorAll('[data-diplomacy-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const actionId = button.dataset.diplomacyAction;
+      const targetId = button.dataset.targetFaction;
+      const result = performDiplomaticAction(gameState, gameState.playerFaction, targetId, actionId);
+      if (!result.ok) {
+        setSaveStatus(`DIPLOMATIC ACTION BLOCKED · ${result.reason}`);
+        return;
+      }
+      const autosaveSucceeded = saveAutosave();
+      showDiplomacy();
+      if (autosaveSucceeded) {
+        setSaveStatus(`${DIPLOMATIC_ACTIONS[actionId].label.toUpperCase()} · ${factionById(targetId).name.toUpperCase()}`);
+      }
+    });
   });
 }
 
@@ -458,6 +531,7 @@ function setSaveStatus(message) {
 }
 
 function applyLoadedState(nextState) {
+  const activePanelMode = panel.classList.contains('open') ? panel.dataset.mode : null;
   const savedFleets = nextState.fleets;
   Object.assign(gameState, structuredClone(nextState));
   for (const [fleetId, entry] of fleetMarkers) {
@@ -468,8 +542,9 @@ function applyLoadedState(nextState) {
     }
   }
   syncGalaxyVisuals();
-  if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
-  if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
+  if (activePanelMode === 'diplomacy') showDiplomacy();
+  else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
+  else if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
   setSaveStatus(`LOADED TURN ${gameState.turn}`);
 }
 
@@ -534,13 +609,16 @@ interactionElement.addEventListener('pointercancel', () => {
 
 closePanel.addEventListener('click', () => closeInspectionPanel());
 galaxyViewButton.addEventListener('click', returnToGalaxy);
+diplomacyViewButton.addEventListener('click', showDiplomacy);
 function advanceTurn() {
+  const activePanelMode = panel.classList.contains('open') ? panel.dataset.mode : null;
   const report = simulateTurn(gameState).lastTurnReport;
   const fleetSummary = report.fleetsMoved.length ? ` · ${report.fleetsMoved.length} FLEETS MOVED` : '';
   navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}`;
   syncGalaxyVisuals();
-  if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
-  if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
+  if (activePanelMode === 'diplomacy') showDiplomacy();
+  else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
+  else if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
   saveAutosave();
 }
 advanceTurnButton.addEventListener('click', advanceTurn);
@@ -594,6 +672,7 @@ addEventListener('keydown', (event) => {
   if (event.repeat || event.target.matches?.('input, select, textarea')) return;
   if (event.key.toLowerCase() === 'g') returnToGalaxy();
   if (event.key.toLowerCase() === 'n') advanceTurn();
+  if (event.key.toLowerCase() === 'd') showDiplomacy();
 });
 
 function resize() {

@@ -1,8 +1,9 @@
 import { assertStateInvariants, GAME_STATE_VERSION } from './gameState.js';
+import { ensureDiplomacyState } from './diplomacy.js';
 
-export const SAVE_SCHEMA_VERSION = 2;
+export const SAVE_SCHEMA_VERSION = 3;
 const STORAGE_KEY = `galaxy-command-save-v${SAVE_SCHEMA_VERSION}`;
-const LEGACY_STORAGE_KEY = 'galaxy-command-save-v1';
+const LEGACY_STORAGE_KEYS = ['galaxy-command-save-v2', 'galaxy-command-save-v1'];
 
 export class SaveError extends Error {
   constructor(message, cause) {
@@ -20,7 +21,7 @@ function keys(slot) {
   const base = `${STORAGE_KEY}:${slot}`;
   return {
     base,
-    legacy: `${LEGACY_STORAGE_KEY}:${slot}`,
+    legacy: LEGACY_STORAGE_KEYS.flatMap((key) => [`${key}:${slot}`, `${key}:${slot}:recovery`]),
     recovery: `${base}:recovery`,
     pending: `${base}:pending`,
   };
@@ -28,7 +29,7 @@ function keys(slot) {
 
 function migrateVersion1State(state) {
   const next = structuredClone(state);
-  next.version = GAME_STATE_VERSION;
+  next.version = 2;
   next.events ??= [];
   next.history ??= [];
   next.lastTurnReport ??= null;
@@ -47,8 +48,16 @@ function migrateVersion1State(state) {
   return next;
 }
 
+function migrateVersion2State(state) {
+  const next = structuredClone(state);
+  next.version = GAME_STATE_VERSION;
+  ensureDiplomacyState(next);
+  return next;
+}
+
 const MIGRATIONS = new Map([
   [1, migrateVersion1State],
+  [2, migrateVersion2State],
 ]);
 
 function validateCurrentState(state) {
@@ -125,7 +134,8 @@ export function saveGame(state, slot = 'autosave') {
   const saveKeys = keys(slot);
   const raw = serializeState(state);
   try {
-    const previous = storage.getItem(saveKeys.base) ?? storage.getItem(saveKeys.legacy);
+    let previous = storage.getItem(saveKeys.base);
+    for (const legacyKey of saveKeys.legacy) previous ??= storage.getItem(legacyKey);
     storage.setItem(saveKeys.pending, raw);
     if (previous) storage.setItem(saveKeys.recovery, previous);
     storage.setItem(saveKeys.base, raw);
@@ -169,7 +179,7 @@ function loadFromKeys(storage, candidates) {
 export function loadGame(slot = 'autosave') {
   const storage = storageForBrowser();
   const saveKeys = keys(slot);
-  return loadFromKeys(storage, [saveKeys.base, saveKeys.recovery, saveKeys.legacy]);
+  return loadFromKeys(storage, [saveKeys.base, saveKeys.recovery, ...saveKeys.legacy]);
 }
 
 export function loadRecoveryGame(slot = 'autosave') {
@@ -186,6 +196,10 @@ export function importSave(raw, slot = 'manual') {
 export function deleteSave(slot = 'autosave') {
   const storage = storageForBrowser();
   const saveKeys = keys(slot);
-  for (const key of Object.values(saveKeys)) storage.removeItem(key);
-  storage.removeItem(`${LEGACY_STORAGE_KEY}:${slot}:recovery`);
+  storage.removeItem(saveKeys.base);
+  storage.removeItem(saveKeys.recovery);
+  storage.removeItem(saveKeys.pending);
+  for (const legacyKey of saveKeys.legacy) {
+    storage.removeItem(legacyKey);
+  }
 }

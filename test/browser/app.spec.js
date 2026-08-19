@@ -26,6 +26,15 @@ test('keeps the command HUD usable at a narrow viewport', async ({ page }) => {
     await expect(page.locator('#navigation-status')).toBeVisible();
     const bounds = await page.locator('#navigation-status').boundingBox();
     expect(bounds.width).toBeLessThanOrEqual(390);
+    await page.locator('#diplomacy-view').click();
+    const panel = page.locator('.hud-panel');
+    await expect.poll(async () => {
+      const panelBounds = await panel.boundingBox();
+      return Math.ceil(panelBounds.x + panelBounds.width);
+    }).toBeLessThanOrEqual(390);
+    const panelBounds = await panel.boundingBox();
+    expect(panelBounds.x).toBeGreaterThanOrEqual(0);
+    expect(panelBounds.y + panelBounds.height).toBeLessThanOrEqual(844);
   }
 });
 
@@ -46,4 +55,16 @@ test('saves and restores the current campaign from the HUD', async ({ page }) =>
   await expect(page.locator('#navigation-status')).toContainText('TURN 2');
   await page.locator('#load-game').click();
   await expect(page.locator('#navigation-status')).toContainText('LOADED TURN 2');
+});
+
+test('performs a deterministic diplomatic action from the HUD', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#diplomacy-view').click();
+  await expect(page.locator('#panel-heading')).toHaveText('DIPLOMATIC COMMAND');
+  const relationship = page.locator('[data-relationship="independent"]');
+  await relationship.locator('[data-diplomacy-action="IMPROVE_RELATIONS"]').click();
+
+  await expect(page.locator('#navigation-status')).toContainText('IMPROVE RELATIONS · INDEPENDENT');
+  await expect(page.locator('#planet-content')).toContainText('900 CR');
+  await expect(relationship).toContainText('Opinion 22');
 });
