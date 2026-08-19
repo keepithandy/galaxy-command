@@ -56,6 +56,13 @@ body { background: radial-gradient(circle at 50% 45%, #111b3a 0%, #060914 34%, #
 .diplomacy-actions button { min-height: 30px; padding: 7px 9px; border: 1px solid #344156; color: #c7d4e5; background: #111b2a; font: 700 9px/1 system-ui, sans-serif; letter-spacing: .07em; cursor: pointer; }
 .diplomacy-actions button:hover:not(:disabled), .diplomacy-actions button:focus-visible { border-color: #6cbbff; background: #172b45; }
 .diplomacy-actions button:disabled { cursor: not-allowed; opacity: .45; }
+.treaty-list { display: grid; gap: 6px; margin-top: 10px; }
+.treaty-empty { font-size: 10px; }
+.treaty-chip { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 8px; border-left: 2px solid #64d39b; background: #10201c; color: #bce7d2; font-size: 9px; letter-spacing: .06em; }
+.treaty-chip button { padding: 4px 6px; border: 1px solid #527668; color: #ccebdd; background: transparent; font-size: 8px; cursor: pointer; }
+.pending-offer { padding: 7px 8px; border-left: 2px solid #e0b55c; background: #211b10; color: #ead39e; font-size: 9px; letter-spacing: .07em; }
+.diplomacy-actions .danger-action { border-color: #7d3f4b; color: #f0b7c0; background: #241117; }
+.diplomacy-actions .danger-action:hover:not(:disabled), .diplomacy-actions .danger-action:focus-visible { border-color: #d06375; background: #381820; }
 
 .hud-bottom { inset: auto 0 0; display: flex; justify-content: space-between; gap: 20px; padding: 13px 18px; border-top: 1px solid #1a2331; background: #03050ae6; color: #8ea2b8; font-size: 9px; letter-spacing: .12em; }
 #selection-readout { color: #a7b5c8; }

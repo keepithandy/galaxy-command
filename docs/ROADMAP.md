@@ -7,7 +7,7 @@ This roadmap is the product architecture for Galaxy Command. The project is inte
 - **Complete:** Phase 1 — Interactive 3D Galaxy Foundation
 - **Complete:** Phase 2 — Galaxy Navigation & Strategic Map (trade routes remain tied to Phase 5 economy work)
 - **Complete:** Phase 3 — Galaxy Data & World Simulation
-- **In progress:** Phase 4 — Factions & Diplomacy (Phase 4A relationship/action foundation delivered)
+- **In progress:** Phase 4 — Factions & Diplomacy (Phases 4A–4B relationship, action, and treaty foundations delivered)
 - **Delivered early as cross-cutting foundations:** Phase 15 versioned/recovery-safe persistence and Phase 16 keyboard, responsive, accessibility, browser, error-handling, and performance gates. Their broader late-game scope remains open.
 
 ## Foundation
@@ -32,7 +32,7 @@ Persistent world state, turn/time progression, population, resources, industry, 
 ### Phase 4 — Factions & Diplomacy
 Faction identities, relationships, reputation, treaties, alliances, war declarations, peace, vassals, and diplomatic actions.
 
-**Status: In progress.** Phase 4A delivers canonical bilateral relationships, opinion/trust/threat state, deterministic diplomatic actions and drift, synchronized war state, save migration, automated invariants, and a command HUD. Treaties, alliances, peace negotiation, vassalage, and autonomous diplomatic AI remain for subsequent Phase 4 slices.
+**Status: In progress.** Phase 4A delivers canonical bilateral relationships, opinion/trust/threat state, deterministic diplomatic actions and drift, synchronized war state, save migration, automated invariants, and a command HUD. Phase 4B adds deterministic treaty proposals and next-turn responses, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, treaty-aware stances, schema migration, and HUD controls. Vassalage and autonomous diplomatic AI remain for subsequent Phase 4 slices.
 
 ### Phase 5 — Economy & Industry
 Resources, production chains, specialization, markets, infrastructure, trade routes, shortages, logistics, blockades, and economic warfare.

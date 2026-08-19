@@ -1,9 +1,9 @@
 import { assertStateInvariants, GAME_STATE_VERSION } from './gameState.js';
 import { ensureDiplomacyState } from './diplomacy.js';
 
-export const SAVE_SCHEMA_VERSION = 3;
+export const SAVE_SCHEMA_VERSION = 4;
 const STORAGE_KEY = `galaxy-command-save-v${SAVE_SCHEMA_VERSION}`;
-const LEGACY_STORAGE_KEYS = ['galaxy-command-save-v2', 'galaxy-command-save-v1'];
+const LEGACY_STORAGE_KEYS = ['galaxy-command-save-v3', 'galaxy-command-save-v2', 'galaxy-command-save-v1'];
 
 export class SaveError extends Error {
   constructor(message, cause) {
@@ -50,6 +50,13 @@ function migrateVersion1State(state) {
 
 function migrateVersion2State(state) {
   const next = structuredClone(state);
+  next.version = 3;
+  ensureDiplomacyState(next);
+  return next;
+}
+
+function migrateVersion3State(state) {
+  const next = structuredClone(state);
   next.version = GAME_STATE_VERSION;
   ensureDiplomacyState(next);
   return next;
@@ -58,6 +65,7 @@ function migrateVersion2State(state) {
 const MIGRATIONS = new Map([
   [1, migrateVersion1State],
   [2, migrateVersion2State],
+  [3, migrateVersion3State],
 ]);
 
 function validateCurrentState(state) {

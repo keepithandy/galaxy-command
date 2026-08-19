@@ -68,3 +68,18 @@ test('performs a deterministic diplomatic action from the HUD', async ({ page })
   await expect(page.locator('#planet-content')).toContainText('900 CR');
   await expect(relationship).toContainText('Opinion 22');
 });
+
+test('proposes and signs a non-aggression pact from the HUD', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#diplomacy-view').click();
+  const relationship = page.locator('[data-relationship="independent"]');
+
+  await relationship.locator('[data-treaty-proposal="NON_AGGRESSION"]').click();
+  await expect(relationship).toContainText('PENDING · NON-AGGRESSION PACT');
+  await expect(page.locator('#navigation-status')).toContainText('NON-AGGRESSION PACT PROPOSED');
+
+  await page.locator('#advance-turn').click();
+  await expect(relationship).toContainText('Non-Aggression Pact');
+  await expect(relationship.locator('[data-break-treaty="NON_AGGRESSION"]')).toBeVisible();
+  await expect(page.locator('#navigation-status')).toContainText('1 TREATY SIGNED');
+});

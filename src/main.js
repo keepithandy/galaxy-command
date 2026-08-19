@@ -7,10 +7,15 @@ import { generateGalaxy } from './core/galaxyGeneration.js';
 import { simulateTurn } from './core/simulation.js';
 import { assignFleetDestination, getReachableSystemIds } from './core/fleetMovement.js';
 import {
+  breakTreaty,
   canPerformDiplomaticAction,
+  canProposeTreaty,
   DIPLOMATIC_ACTIONS,
   getRelationship,
   performDiplomaticAction,
+  proposeTreaty,
+  setWarState,
+  TREATY_DEFINITIONS,
 } from './core/diplomacy.js';
 import { exportSave, importSave, loadGame, SaveError, saveGame } from './core/save.js';
 import { GAME_VERSION, VERSION_CACHE_KEY } from './config/buildInfo.js';
@@ -388,6 +393,10 @@ function diplomaticActionReason(availability) {
   if (availability.reason === 'AT_WAR') return 'Unavailable during war';
   if (availability.reason === 'INSUFFICIENT_CREDITS') return 'Insufficient credits';
   if (availability.reason === 'COOLDOWN') return `Available in ${availability.turnsRemaining} turn(s)`;
+  if (availability.reason === 'OFFER_PENDING') return 'Another offer is pending';
+  if (availability.reason === 'NOT_AT_WAR') return 'Only available during war';
+  if (availability.reason === 'TREATY_ACTIVE') return 'Treaty already active';
+  if (availability.reason === 'REQUIRES_NON_AGGRESSION') return 'Requires an active non-aggression pact';
   return availability.allowed ? '' : 'Unavailable';
 }
 
@@ -411,6 +420,19 @@ function showDiplomacy() {
           const reason = diplomaticActionReason(availability);
           return `<button type="button" data-diplomacy-action="${actionId}" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${reason}">${action.label}${action.cost ? ` · ${action.cost} CR` : ''}</button>`;
         }).join('');
+        const proposalTypes = relationship.atWar ? ['PEACE'] : ['NON_AGGRESSION', 'ALLIANCE'];
+        const proposalActions = proposalTypes.map((treatyType) => {
+          const treaty = TREATY_DEFINITIONS[treatyType];
+          const availability = canProposeTreaty(gameState, gameState.playerFaction, target.id, treatyType);
+          const reason = diplomaticActionReason(availability);
+          return `<button type="button" data-treaty-proposal="${treatyType}" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${reason}">PROPOSE ${treaty.label.toUpperCase()}${treaty.cost ? ` · ${treaty.cost} CR` : ''}</button>`;
+        }).join('');
+        const activeTreaties = relationship.treaties.length > 0
+          ? relationship.treaties.map((treaty) => `<div class="treaty-chip"><span>${TREATY_DEFINITIONS[treaty.type].label} · ${treaty.expiresTurn - gameState.turn} turns</span><button type="button" data-break-treaty="${treaty.type}" data-target-faction="${target.id}">BREAK</button></div>`).join('')
+          : '<span class="muted treaty-empty">No active treaties</span>';
+        const pendingOffer = relationship.pendingOffer
+          ? `<div class="pending-offer">PENDING · ${TREATY_DEFINITIONS[relationship.pendingOffer.type].label.toUpperCase()} · RESOLVES NEXT TURN</div>`
+          : '';
         return `
           <section class="diplomacy-card" data-relationship="${target.id}">
             <div class="diplomacy-faction"><span class="planet-mark" style="background:${target.color}"></span><strong>${target.name}</strong><b>${relationship.stance}</b></div>
@@ -419,7 +441,8 @@ function showDiplomacy() {
               <span>Trust <b>${relationship.trust}</b></span>
               <span>Threat <b>${relationship.threat}</b></span>
             </div>
-            <div class="diplomacy-actions">${actions}</div>
+            <div class="treaty-list">${activeTreaties}${pendingOffer}</div>
+            <div class="diplomacy-actions">${actions}${proposalActions}${relationship.atWar ? '' : `<button type="button" class="danger-action" data-declare-war="true" data-target-faction="${target.id}">DECLARE WAR</button>`}</div>
           </section>
         `;
       }).join('')}
@@ -440,6 +463,39 @@ function showDiplomacy() {
       if (autosaveSucceeded) {
         setSaveStatus(`${DIPLOMATIC_ACTIONS[actionId].label.toUpperCase()} · ${factionById(targetId).name.toUpperCase()}`);
       }
+    });
+  });
+  content.querySelectorAll('[data-treaty-proposal]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const treatyType = button.dataset.treatyProposal;
+      const targetId = button.dataset.targetFaction;
+      const result = proposeTreaty(gameState, gameState.playerFaction, targetId, treatyType);
+      if (!result.ok) {
+        setSaveStatus(`TREATY PROPOSAL BLOCKED · ${result.reason}`);
+        return;
+      }
+      const autosaveSucceeded = saveAutosave();
+      showDiplomacy();
+      if (autosaveSucceeded) setSaveStatus(`${TREATY_DEFINITIONS[treatyType].label.toUpperCase()} PROPOSED`);
+    });
+  });
+  content.querySelectorAll('[data-break-treaty]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetId = button.dataset.targetFaction;
+      const treatyType = button.dataset.breakTreaty;
+      if (!breakTreaty(gameState, gameState.playerFaction, targetId, treatyType)) return;
+      const autosaveSucceeded = saveAutosave();
+      showDiplomacy();
+      if (autosaveSucceeded) setSaveStatus(`${TREATY_DEFINITIONS[treatyType].label.toUpperCase()} BROKEN`);
+    });
+  });
+  content.querySelectorAll('[data-declare-war]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetId = button.dataset.targetFaction;
+      if (!setWarState(gameState, gameState.playerFaction, targetId, true)) return;
+      const autosaveSucceeded = saveAutosave();
+      showDiplomacy();
+      if (autosaveSucceeded) setSaveStatus(`WAR DECLARED · ${factionById(targetId).name.toUpperCase()}`);
     });
   });
 }
@@ -614,7 +670,16 @@ function advanceTurn() {
   const activePanelMode = panel.classList.contains('open') ? panel.dataset.mode : null;
   const report = simulateTurn(gameState).lastTurnReport;
   const fleetSummary = report.fleetsMoved.length ? ` · ${report.fleetsMoved.length} FLEETS MOVED` : '';
-  navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}`;
+  const offerResolutions = report.diplomacyUpdated
+    .map((update) => update.offerResolution)
+    .filter(Boolean);
+  const signedCount = offerResolutions.filter((resolution) => resolution.accepted).length;
+  const rejectedCount = offerResolutions.length - signedCount;
+  const diplomacySummary = [
+    signedCount ? `${signedCount} TREATY${signedCount === 1 ? '' : 'IES'} SIGNED` : null,
+    rejectedCount ? `${rejectedCount} OFFER${rejectedCount === 1 ? '' : 'S'} REJECTED` : null,
+  ].filter(Boolean).map((summary) => ` · ${summary}`).join('');
+  navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}${diplomacySummary}`;
   syncGalaxyVisuals();
   if (activePanelMode === 'diplomacy') showDiplomacy();
   else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
