@@ -6,7 +6,9 @@ Current build: `0.0.1d`
 
 ## Current milestone
 
-The repository now contains the Phase 1 interactive 3D galaxy foundation and the Phase 2 navigation/strategic-map milestone. Players can move between galaxy, system, and planet focus; inspect state-driven planet and fleet data; use faction filters; and read territory ownership directly from the map. Shared foundations also exist for simulation, diplomacy, economy, military, technology, events, AI, and browser persistence.
+Phases 1–3 are delivered: the interactive 3D galaxy, strategic navigation/map, and deterministic world simulation now work together. Players can move between galaxy, system, and planet focus; inspect live planet and fleet state; advance deterministic turns; use faction filters; and read territory ownership directly from the map. Versioned persistence and the first accessibility/performance release gates have also been delivered ahead of their broader roadmap phases.
+
+Phase 4 — Factions & Diplomacy — is the next product milestone.
 
 The architecture is deliberately data-driven so the visible galaxy can remain the primary command surface as deeper systems are implemented.
 
@@ -22,6 +24,29 @@ Build for production:
 ```bash
 npm run build
 ```
+
+Start a deterministic procedural campaign by supplying a seed in the URL, for example `http://localhost:5173/?seed=9001`. Omitting `seed` loads the curated default galaxy.
+
+Run browser smoke tests across Chromium, Firefox, and WebKit:
+
+```bash
+npx playwright install chromium firefox webkit
+npm run test:browser
+```
+
+Check the production bundle against the tracked JavaScript, CSS, and total-size budgets:
+
+```bash
+npm run check:performance
+```
+
+The CI workflow runs unit tests, production builds, performance budgets, and browser smoke tests on every pull request. If WebGL is unavailable or initialization fails, the app shows a recovery panel instead of leaving a blank screen.
+
+## Saves and recovery
+
+Saves use a versioned JSON envelope. The current schema is version 2; older version 1 saves are migrated when loaded. Autosaves are written through a pending copy and retain the previous valid payload as a recovery copy if a write fails. The HUD provides Save, Load, Export, and Import controls. Imported files are validated before they can replace the current campaign. See [`docs/SAVE_FORMAT.md`](docs/SAVE_FORMAT.md) for the schema and recovery contract.
+
+Keyboard shortcuts: `G` returns to the galaxy view, `N` advances a turn, and `Escape` closes the inspection panel or returns to the galaxy view. The interface respects the operating system's reduced-motion preference.
 
 ## Architecture
 

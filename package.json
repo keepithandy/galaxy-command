@@ -7,12 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "test:browser": "playwright test",
+    "check:performance": "node scripts/check-performance.mjs"
   },
   "dependencies": {
     "three": "^0.179.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "vite": "^7.1.2"
   }
 }

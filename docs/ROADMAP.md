@@ -2,23 +2,37 @@
 
 This roadmap is the product architecture for Galaxy Command. The project is intentionally layered: the 3D galaxy remains the primary command surface while simulation, economy, diplomacy, military, AI, persistence, presentation, and multiplayer are added behind it.
 
+## Delivery status
+
+- **Complete:** Phase 1 — Interactive 3D Galaxy Foundation
+- **Complete:** Phase 2 — Galaxy Navigation & Strategic Map (trade routes remain tied to Phase 5 economy work)
+- **Complete:** Phase 3 — Galaxy Data & World Simulation
+- **Next:** Phase 4 — Factions & Diplomacy
+- **Delivered early as cross-cutting foundations:** Phase 15 versioned/recovery-safe persistence and Phase 16 keyboard, responsive, accessibility, browser, error-handling, and performance gates. Their broader late-game scope remains open.
+
 ## Foundation
 
 ### Phase 1 — Interactive 3D Galaxy Foundation
 Three.js/Vite renderer, starfield, star systems, orbiting planets, data-driven planet inspection, faction-aware visuals, and responsive command HUD.
 
+**Status: Complete.** The renderer, data-driven galaxy, inspection surfaces, faction visuals, and command HUD are integrated and covered by build/browser checks.
+
 ### Phase 2 — Galaxy Navigation & Strategic Map
 System focus, galaxy/system/planet camera transitions, labels, faction territory overlays, fleet markers, trade routes, strategic filters, and navigation state.
 
-**Status:** Phase 2A navigation and the Phase 2B strategic-map foundation are delivered. Trade-route rendering and simulation-backed fleet movement remain dependent on Phases 5 and 6.
+**Status: Complete.** Navigation, strategic filters, live fleet movement, fleet markers, labels, and territory synchronization are delivered. Trade-route rendering remains intentionally deferred to Phase 5 because it depends on the economy model.
 
 ### Phase 3 — Galaxy Data & World Simulation
 Persistent world state, turn/time progression, population, resources, industry, stability, development, procedural generation, and deterministic simulation ticks.
+
+**Status: Complete.** Seeded generation, deterministic turns, state invariants, live HUD updates, and automated replay/simulation coverage are delivered.
 
 ## Core Strategy
 
 ### Phase 4 — Factions & Diplomacy
 Faction identities, relationships, reputation, treaties, alliances, war declarations, peace, vassals, and diplomatic actions.
+
+**Status: Next.** Diplomacy is the next product phase after the completed foundation and persistence hardening work.
 
 ### Phase 5 — Economy & Industry
 Resources, production chains, specialization, markets, infrastructure, trade routes, shortages, logistics, blockades, and economic warfare.
@@ -55,8 +69,12 @@ Configurable galaxy generation, faction counts, aggression, resources, technolog
 ### Phase 15 — Persistence & Campaign Infrastructure
 Versioned saves, autosaves, migration, campaign slots, deterministic state serialization, event history, and recovery-safe persistence.
 
+**Status: Foundation delivered early.** Schema-versioned saves, version 1 migration, named slot support, turn autosaves, last-known-good recovery, validation, export/import, and automated tests are in place. Expanded campaign-slot UI and long-horizon campaign-history tooling remain future Phase 15 work.
+
 ### Phase 16 — UX, Accessibility & Performance
 Keyboard/controller support, responsive scaling, accessibility, GPU optimization, object pooling, LOD, simulation throttling, and large-galaxy performance.
+
+**Status: Foundation delivered early.** Keyboard/focus behavior, responsive HUD checks, reduced motion, axe coverage, initialization recovery, browser smoke tests, CI, and bundle budgets are in place. Controller support and large-galaxy rendering optimizations remain future Phase 16 work.
 
 ### Phase 17 — Audio & Presentation
 Ambient audio, faction themes, battle/UI sounds, dynamic music, planet atmosphere effects, fleet effects, transitions, and presentation polish.

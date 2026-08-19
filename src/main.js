@@ -3,6 +3,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 
 import { createGameState, hydrateGalaxyState } from './core/gameState.js';
+import { generateGalaxy } from './core/galaxyGeneration.js';
+import { simulateTurn } from './core/simulation.js';
+import { assignFleetDestination, getReachableSystemIds } from './core/fleetMovement.js';
+import { exportSave, importSave, loadGame, SaveError, saveGame } from './core/save.js';
 import { GAME_VERSION, VERSION_CACHE_KEY } from './config/buildInfo.js';
 import galaxyData from './data/galaxy.json';
 import {
@@ -16,8 +20,10 @@ import { createGalaxyBackdrop, createSystemHalo } from './visuals/galaxyBackdrop
 import './styles/main.css';
 import './styles/strategic-map.css';
 
-const galaxy = galaxyData.galaxy;
-const gameState = hydrateGalaxyState(createGameState(), galaxy);
+const requestedSeed = Number(new URLSearchParams(location.search).get('seed'));
+const proceduralSeed = Number.isSafeInteger(requestedSeed) ? requestedSeed : null;
+const galaxy = proceduralSeed === null ? galaxyData.galaxy : generateGalaxy({ seed: proceduralSeed });
+const gameState = hydrateGalaxyState(createGameState(proceduralSeed ?? 1337), galaxy);
 const factions = new Map(galaxy.factions.map((faction) => [faction.id, faction]));
 
 const app = document.querySelector('#app');
@@ -29,8 +35,55 @@ const selectionReadout = document.querySelector('#selection-readout');
 const navigationStatus = document.querySelector('#navigation-status');
 const closePanel = document.querySelector('#close-panel');
 const galaxyViewButton = document.querySelector('#galaxy-view');
+const advanceTurnButton = document.querySelector('#advance-turn');
+const saveGameButton = document.querySelector('#save-game');
+const loadGameButton = document.querySelector('#load-game');
+const exportGameButton = document.querySelector('#export-game');
+const importGameButton = document.querySelector('#import-game');
+const importFile = document.querySelector('#import-file');
 const factionFilters = document.querySelector('#faction-filters');
 const gameVersion = document.querySelector('#game-version');
+const fatalError = document.querySelector('#fatal-error');
+const fatalErrorTitle = document.querySelector('#fatal-error-title');
+const fatalErrorMessage = document.querySelector('#fatal-error-message');
+const fatalErrorRetry = document.querySelector('#fatal-error-retry');
+
+let fatalErrorShown = false;
+let lastFocusedElement = null;
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function showFatalError(title, message) {
+  fatalErrorShown = true;
+  loading.classList.add('hidden');
+  fatalErrorTitle.textContent = title;
+  fatalErrorMessage.textContent = message;
+  fatalError.hidden = false;
+  fatalErrorRetry.focus({ preventScroll: true });
+}
+
+function describeInitializationError(error) {
+  if (error instanceof Error && error.message) return error.message;
+  return 'The browser could not create the 3D command view.';
+}
+
+function assertWebGLSupport() {
+  const probe = document.createElement('canvas');
+  const context = probe.getContext('webgl2') || probe.getContext('webgl');
+  if (!context) {
+    throw new Error('WebGL is unavailable. Enable hardware acceleration or use a browser with WebGL support.');
+  }
+}
+
+function installRuntimeErrorBoundary() {
+  addEventListener('error', (event) => {
+    if (!fatalErrorShown) showFatalError('Galaxy Command stopped unexpectedly', describeInitializationError(event.error));
+  });
+  addEventListener('unhandledrejection', (event) => {
+    if (!fatalErrorShown) showFatalError('Galaxy Command stopped unexpectedly', describeInitializationError(event.reason));
+  });
+}
+
+installRuntimeErrorBoundary();
 
 document.title = `Galaxy Command · ${GAME_VERSION}`;
 document.documentElement.dataset.gameVersion = GAME_VERSION;
@@ -49,18 +102,34 @@ scene.fog = new THREE.FogExp2(0x03050a, 0.0022);
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
 camera.position.set(0, 40, 64);
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+let renderer;
+try {
+  assertWebGLSupport();
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+} catch (error) {
+  showFatalError(
+    '3D graphics are unavailable',
+    describeInitializationError(error)
+  );
+}
+
+if (!renderer) {
+  fatalErrorRetry.addEventListener('click', () => window.location.reload());
+} else {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+}
+
+const interactionElement = renderer?.domElement ?? canvas;
 
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.setSize(innerWidth, innerHeight);
 labelRenderer.domElement.className = 'label-layer';
 app.appendChild(labelRenderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, interactionElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.minDistance = 5;
@@ -212,6 +281,23 @@ function factionById(factionId) {
   return factions.get(factionId) ?? { id: 'neutral', name: 'Unknown', color: '#ffffff' };
 }
 
+function openInspectionPanel() {
+  if (!panel.classList.contains('open')) lastFocusedElement = document.activeElement;
+  panel.classList.add('open');
+  panel.setAttribute('aria-hidden', 'false');
+  panel.focus({ preventScroll: true });
+}
+
+function closeInspectionPanel({ restoreFocus = true } = {}) {
+  const wasOpen = panel.classList.contains('open');
+  panel.classList.remove('open');
+  panel.setAttribute('aria-hidden', 'true');
+  if (restoreFocus && wasOpen && lastFocusedElement?.isConnected) {
+    lastFocusedElement.focus({ preventScroll: true });
+  }
+  lastFocusedElement = null;
+}
+
 function showPlanet(planetId) {
   const visual = planetVisuals.get(planetId);
   const planet = gameState.planets[planetId];
@@ -231,6 +317,7 @@ function showPlanet(planetId) {
     <div class="stat"><span>Industry</span><b>${planet.industry}</b><i><em style="width:${planet.industry}%"></em></i></div>
     <div class="stat"><span>Resources</span><b>${planet.resources}</b><i><em style="width:${planet.resources}%"></em></i></div>
     <div class="stat"><span>Defense</span><b>${planet.defense}</b><i><em style="width:${planet.defense}%"></em></i></div>
+    <div class="stat"><span>Development</span><b>${planet.development.toFixed(1)}</b><i><em style="width:${planet.development}%"></em></i></div>
     <div class="status-large">${visual.planet.status}</div>
   `;
   panel.classList.add('open');
@@ -241,6 +328,16 @@ function showFleet(fleetId) {
   const system = galaxy.systems.find((item) => item.id === fleet?.systemId);
   if (!fleet || !system) return;
   const faction = factionById(fleet.faction);
+  const destination = fleet.destinationSystemId
+    ? galaxy.systems.find((item) => item.id === fleet.destinationSystemId)
+    : null;
+  const reachableSystems = getReachableSystemIds(galaxy, fleet.systemId)
+    .map((systemId) => galaxy.systems.find((item) => item.id === systemId))
+    .filter(Boolean);
+  const destinationOptions = reachableSystems.length > 0
+    ? reachableSystems.map((item) => `<option value="${item.id}">${item.name}</option>`).join('')
+    : '<option value="">No reachable systems</option>';
+  const movementStatus = fleet.movementStatus === 'IDLE' ? fleet.status : fleet.movementStatus;
   selectionReadout.textContent = `${system.name.toUpperCase()} · ${fleet.name.toUpperCase()}`;
   content.innerHTML = `
     <div class="planet-title">
@@ -248,11 +345,42 @@ function showFleet(fleetId) {
       <div><p class="eyebrow">FLEET CONTACT</p><h2>${fleet.name}</h2></div>
     </div>
     <div class="intel-row"><span>Faction</span><strong>${faction.name}</strong></div>
-    <div class="intel-row"><span>System</span><strong>${system.name}</strong></div>
+    <div class="intel-row"><span>Current system</span><strong>${system.name}</strong></div>
+    <div class="intel-row"><span>Destination</span><strong>${destination?.name ?? '—'}</strong></div>
+    <div class="intel-row"><span>ETA</span><strong>${fleet.eta ? `${fleet.eta} TURN` : '—'}</strong></div>
     <div class="intel-row"><span>Strength</span><strong>${fleet.strength}</strong></div>
-    <div class="status-large">${fleet.status}</div>
+    <div class="fleet-route">
+      <label for="fleet-destination">SET COURSE</label>
+      <select id="fleet-destination" ${fleet.movementStatus === 'MOVING' ? 'disabled' : ''}>
+        <option value="">Choose a reachable system</option>
+        ${destinationOptions}
+      </select>
+      <button id="fleet-move-button" type="button" ${fleet.movementStatus === 'MOVING' ? 'disabled' : ''}>MOVE FLEET</button>
+    </div>
+    <div class="status-large">${movementStatus}</div>
   `;
-  panel.classList.add('open');
+  openInspectionPanel();
+  const destinationSelect = document.querySelector('#fleet-destination');
+  const moveButton = document.querySelector('#fleet-move-button');
+  moveButton?.addEventListener('click', () => {
+    if (!destinationSelect?.value) return;
+    if (assignFleetDestination(gameState, galaxy, fleetId, destinationSelect.value)) {
+      syncGalaxyVisuals();
+      showFleet(fleetId);
+    }
+  });
+}
+
+function syncFleetMarkers() {
+  for (const { fleet, marker } of fleetMarkers.values()) {
+    const systemRecord = systemRecords.get(fleet.systemId);
+    if (!systemRecord) continue;
+    if (marker.parent !== systemRecord.group) {
+      marker.parent?.remove(marker);
+      systemRecord.group.add(marker);
+    }
+    marker.userData.systemId = fleet.systemId;
+  }
 }
 
 function syncGalaxyVisuals() {
@@ -285,6 +413,7 @@ function syncGalaxyVisuals() {
     labelElement.dataset.filtered = String(!matches);
   }
 
+  syncFleetMarkers();
   for (const { fleet, labelElement, marker } of fleetMarkers.values()) {
     const matches = filter === 'all' || fleet.faction === filter;
     marker.visible = matches && !isGalaxyView && fleet.systemId === focusedSystem;
@@ -311,34 +440,71 @@ function renderFilterControls() {
 
 function returnToGalaxy() {
   strategicMap.returnToGalaxy();
-  panel.classList.remove('open');
+  closeInspectionPanel();
   if (selected) selected.scale.setScalar(1);
   selected = null;
   selectionReadout.textContent = 'NO SYSTEM SELECTED';
 }
 
-strategicMap.subscribe((state) => {
-  navigationStatus.textContent = state.mode === 'galaxy'
+function navigationLabel(state) {
+  const location = state.mode === 'galaxy'
     ? 'GALAXY VIEW'
     : `${state.mode.toUpperCase()} · ${(state.selectedPlanet ?? state.selectedSystem).toUpperCase()}`;
+  return `${location} · TURN ${gameState.turn} · YEAR ${gameState.year}`;
+}
+
+function setSaveStatus(message) {
+  navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${message}`;
+}
+
+function applyLoadedState(nextState) {
+  const savedFleets = nextState.fleets;
+  Object.assign(gameState, structuredClone(nextState));
+  for (const [fleetId, entry] of fleetMarkers) {
+    const savedFleet = savedFleets[fleetId];
+    if (savedFleet) {
+      Object.assign(entry.fleet, savedFleet);
+      gameState.fleets[fleetId] = entry.fleet;
+    }
+  }
+  syncGalaxyVisuals();
+  if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
+  if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
+  setSaveStatus(`LOADED TURN ${gameState.turn}`);
+}
+
+function saveAutosave() {
+  try {
+    saveGame(gameState);
+    return true;
+  } catch (error) {
+    setSaveStatus(error instanceof SaveError ? 'AUTOSAVE FAILED — RECOVERY COPY PRESERVED' : 'AUTOSAVE FAILED');
+    return false;
+  }
+}
+
+strategicMap.subscribe((state) => {
+  navigationStatus.textContent = navigationLabel(state);
   syncGalaxyVisuals();
 });
+navigationStatus.textContent = navigationLabel(strategicMap.state);
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerStart = null;
 
-renderer.domElement.addEventListener('pointerdown', (event) => {
+interactionElement.addEventListener('pointerdown', (event) => {
   pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
 });
 
-renderer.domElement.addEventListener('pointerup', (event) => {
+interactionElement.addEventListener('pointerup', (event) => {
   if (!pointerStart || pointerStart.id !== event.pointerId) return;
   const travel = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
   pointerStart = null;
   if (travel > 6) return;
+  interactionElement.focus({ preventScroll: true });
 
-  const bounds = renderer.domElement.getBoundingClientRect();
+  const bounds = interactionElement.getBoundingClientRect();
   pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
@@ -353,7 +519,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   } else if (type === 'system') {
     const record = systemRecords.get(systemId);
     strategicMap.selectSystem(systemId, record.group.position);
-    panel.classList.remove('open');
+    closeInspectionPanel();
     selectionReadout.textContent = `${record.system.name.toUpperCase()} SYSTEM`;
   } else if (type === 'fleet') {
     const record = systemRecords.get(systemId);
@@ -362,17 +528,76 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   }
 });
 
-renderer.domElement.addEventListener('pointercancel', () => {
+interactionElement.addEventListener('pointercancel', () => {
   pointerStart = null;
 });
 
-closePanel.addEventListener('click', () => panel.classList.remove('open'));
+closePanel.addEventListener('click', () => closeInspectionPanel());
 galaxyViewButton.addEventListener('click', returnToGalaxy);
+function advanceTurn() {
+  const report = simulateTurn(gameState).lastTurnReport;
+  const fleetSummary = report.fleetsMoved.length ? ` · ${report.fleetsMoved.length} FLEETS MOVED` : '';
+  navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}`;
+  syncGalaxyVisuals();
+  if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
+  if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
+  saveAutosave();
+}
+advanceTurnButton.addEventListener('click', advanceTurn);
+saveGameButton.addEventListener('click', () => {
+  try {
+    saveGame(gameState);
+    setSaveStatus(`SAVED TURN ${gameState.turn}`);
+  } catch (error) {
+    setSaveStatus(error instanceof SaveError ? 'SAVE FAILED — RECOVERY COPY PRESERVED' : 'SAVE FAILED');
+  }
+});
+loadGameButton.addEventListener('click', () => {
+  try {
+    const loaded = loadGame();
+    if (loaded) applyLoadedState(loaded);
+    else setSaveStatus('NO USABLE SAVE FOUND');
+  } catch (error) {
+    setSaveStatus(error instanceof SaveError ? 'LOAD FAILED — STARTING STATE PRESERVED' : 'LOAD FAILED');
+  }
+});
+exportGameButton.addEventListener('click', () => {
+  try {
+    const blob = new Blob([exportSave(gameState)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `galaxy-command-turn-${gameState.turn}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setSaveStatus('CAMPAIGN EXPORTED');
+  } catch (error) {
+    setSaveStatus(error instanceof SaveError ? 'EXPORT FAILED' : 'EXPORT FAILED');
+  }
+});
+importGameButton.addEventListener('click', () => importFile.click());
+importFile.addEventListener('change', async () => {
+  const [file] = importFile.files ?? [];
+  if (!file) return;
+  try {
+    const imported = importSave(await file.text(), 'manual');
+    applyLoadedState(imported);
+    setSaveStatus(`IMPORTED TURN ${gameState.turn}`);
+  } catch (error) {
+    setSaveStatus(error instanceof SaveError ? 'IMPORT REJECTED — CURRENT STATE PRESERVED' : 'IMPORT FAILED');
+  } finally {
+    importFile.value = '';
+  }
+});
 addEventListener('keydown', (event) => {
   if (event.key === 'Escape') returnToGalaxy();
+  if (event.repeat || event.target.matches?.('input, select, textarea')) return;
+  if (event.key.toLowerCase() === 'g') returnToGalaxy();
+  if (event.key.toLowerCase() === 'n') advanceTurn();
 });
 
 function resize() {
+  if (!renderer) return;
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -390,18 +615,21 @@ const clock = new THREE.Clock();
 const trackedPosition = new THREE.Vector3();
 
 function animate() {
+  if (!renderer) return;
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
 
-  for (const { mesh } of planetVisuals.values()) {
-    mesh.userData.orbitAngle += mesh.userData.orbitSpeed * delta;
-    mesh.position.set(
-      Math.cos(mesh.userData.orbitAngle) * mesh.userData.orbit,
-      0,
-      Math.sin(mesh.userData.orbitAngle) * mesh.userData.orbit
-    );
-    mesh.rotation.y += 0.35 * delta;
+  if (!prefersReducedMotion) {
+    for (const { mesh } of planetVisuals.values()) {
+      mesh.userData.orbitAngle += mesh.userData.orbitSpeed * delta;
+      mesh.position.set(
+        Math.cos(mesh.userData.orbitAngle) * mesh.userData.orbit,
+        0,
+        Math.sin(mesh.userData.orbitAngle) * mesh.userData.orbit
+      );
+      mesh.rotation.y += 0.35 * delta;
+    }
   }
 
   if (strategicMap.state.mode === 'planet') {
@@ -409,9 +637,9 @@ function animate() {
     strategicMap.trackPosition(trackedPosition);
   }
 
-  strategicMap.update();
+  strategicMap.update(prefersReducedMotion ? 1 : undefined);
   controls.update();
-  galaxyBackdrop.update(elapsed);
+  if (!prefersReducedMotion) galaxyBackdrop.update(elapsed);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
