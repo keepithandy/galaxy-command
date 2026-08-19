@@ -83,3 +83,49 @@ test('proposes and signs a non-aggression pact from the HUD', async ({ page }) =
   await expect(relationship.locator('[data-break-treaty="NON_AGGRESSION"]')).toBeVisible();
   await expect(page.locator('#navigation-status')).toContainText('1 TREATY SIGNED');
 });
+
+test('exposes alliance-gated vassalage from the diplomacy HUD', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#diplomacy-view').click();
+  const relationship = page.locator('[data-relationship="independent"]');
+  const vassalage = relationship.locator('[data-treaty-proposal="VASSALAGE"]');
+
+  await expect(vassalage).toBeVisible();
+  await expect(vassalage).toBeDisabled();
+  await expect(vassalage).toHaveAttribute('title', 'Requires an active alliance');
+  await expect(vassalage).toContainText('250 CR');
+});
+
+test('renders subject restrictions and the independence control from a valid save', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#save-game').click();
+  await page.evaluate(() => {
+    const key = 'galaxy-command-save-v5:autosave';
+    const envelope = JSON.parse(localStorage.getItem(key));
+    const relationship = envelope.state.diplomacy['aurora::independent'];
+    relationship.treaties = [];
+    relationship.pendingOffer = null;
+    relationship.vassalage = {
+      overlordId: 'independent',
+      subjectId: 'aurora',
+      startedTurn: envelope.state.turn,
+    };
+    relationship.stance = 'VASSAL';
+    localStorage.setItem(key, JSON.stringify(envelope));
+  });
+  await page.locator('#load-game').click();
+  await expect(page.locator('#navigation-status')).toContainText('LOADED TURN 1');
+  await page.locator('#diplomacy-view').click();
+
+  const overlord = page.locator('[data-relationship="independent"]');
+  await expect(overlord).toContainText('OVERLORD');
+  const independence = overlord.locator('[data-declare-independence]');
+  await expect(independence).toBeDisabled();
+  await expect(independence).toHaveAttribute('title', 'Independence available in 3 turn(s)');
+
+  const thirdPartyAction = page
+    .locator('[data-relationship="vanguard"]')
+    .locator('[data-diplomacy-action="IMPROVE_RELATIONS"]');
+  await expect(thirdPartyAction).toBeDisabled();
+  await expect(thirdPartyAction).toHaveAttribute('title', 'A subject cannot conduct independent diplomacy');
+});

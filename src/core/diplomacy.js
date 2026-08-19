@@ -1,4 +1,4 @@
-export const DIPLOMATIC_STANCES = Object.freeze(['ALLIED', 'FRIENDLY', 'NEUTRAL', 'WARY', 'HOSTILE', 'WAR']);
+export const DIPLOMATIC_STANCES = Object.freeze(['VASSAL', 'ALLIED', 'FRIENDLY', 'NEUTRAL', 'WARY', 'HOSTILE', 'WAR']);
 
 export const DIPLOMATIC_ACTIONS = Object.freeze({
   IMPROVE_RELATIONS: Object.freeze({
@@ -33,7 +33,15 @@ export const DIPLOMATIC_ACTIONS = Object.freeze({
 export const TREATY_DEFINITIONS = Object.freeze({
   NON_AGGRESSION: Object.freeze({ label: 'Non-Aggression Pact', cost: 50, duration: 12 }),
   ALLIANCE: Object.freeze({ label: 'Alliance', cost: 150, duration: 24 }),
+  VASSALAGE: Object.freeze({ label: 'Vassalage', cost: 250, duration: null }),
   PEACE: Object.freeze({ label: 'Peace Accord', cost: 0, duration: null }),
+});
+
+export const VASSALAGE_RULES = Object.freeze({
+  minimumTurnsBeforeIndependence: 3,
+  minimumOpinion: 60,
+  minimumTrust: 70,
+  maximumThreat: 40,
 });
 
 const ACTIVE_TREATY_TYPES = Object.freeze(['NON_AGGRESSION', 'ALLIANCE']);
@@ -51,6 +59,7 @@ export function hasTreaty(relationship, treatyType) {
 
 export function deriveDiplomaticStance(relationship) {
   if (relationship.atWar) return 'WAR';
+  if (relationship.vassalage) return 'VASSAL';
   if (hasTreaty(relationship, 'ALLIANCE')) return 'ALLIED';
   if (relationship.opinion >= 45 && relationship.trust >= 55) return 'FRIENDLY';
   if (relationship.opinion <= -55 || relationship.threat >= 75) return 'HOSTILE';
@@ -78,6 +87,7 @@ function createRelationship(factions, factionA, factionB) {
     warStartedTurn: atWar ? 1 : null,
     treaties: [],
     pendingOffer: null,
+    vassalage: null,
     lastActions: {},
     modifiers: [],
   };
@@ -126,6 +136,7 @@ export function ensureDiplomacyState(state) {
     relationship.warStartedTurn ??= relationship.atWar ? 1 : null;
     relationship.treaties ??= [];
     relationship.pendingOffer ??= null;
+    relationship.vassalage ??= null;
     relationship.lastActions ??= {};
     relationship.modifiers ??= [];
     relationship.stance = deriveDiplomaticStance(relationship);
@@ -140,6 +151,22 @@ export function getRelationship(state, factionA, factionB) {
   return key ? state.diplomacy?.[key] ?? null : null;
 }
 
+export function getVassalageRole(state, factionId) {
+  let overlordId = null;
+  const subjectIds = [];
+  for (const relationship of Object.values(state.diplomacy ?? {})) {
+    const vassalage = relationship.vassalage;
+    if (!vassalage) continue;
+    if (vassalage.subjectId === factionId) overlordId = vassalage.overlordId;
+    if (vassalage.overlordId === factionId) subjectIds.push(vassalage.subjectId);
+  }
+  return { overlordId, subjectIds: subjectIds.sort() };
+}
+
+export function getVassalage(state, factionA, factionB) {
+  return getRelationship(state, factionA, factionB)?.vassalage ?? null;
+}
+
 function appendEvent(state, type, payload) {
   state.events.push({ turn: state.turn, type, payload });
   if (state.events.length > 100) state.events.shift();
@@ -152,6 +179,10 @@ export function canPerformDiplomaticAction(state, actorId, targetId, actionId) {
     return { allowed: false, reason: 'INVALID_FACTION_PAIR' };
   }
   if (!action) return { allowed: false, reason: 'UNKNOWN_ACTION' };
+  const actorRole = getVassalageRole(state, actorId);
+  if (actorRole.overlordId && actorRole.overlordId !== targetId) {
+    return { allowed: false, reason: 'ACTOR_IS_VASSAL' };
+  }
   if (relationship.atWar && !action.allowedAtWar) return { allowed: false, reason: 'AT_WAR' };
   if (state.factions[actorId].credits < action.cost) return { allowed: false, reason: 'INSUFFICIENT_CREDITS' };
 
@@ -208,6 +239,11 @@ export function canProposeTreaty(state, actorId, targetId, treatyType) {
   }
   if (!definition) return { allowed: false, reason: 'UNKNOWN_TREATY' };
   if (relationship.pendingOffer) return { allowed: false, reason: 'OFFER_PENDING' };
+  if (relationship.vassalage) return { allowed: false, reason: 'VASSALAGE_ACTIVE' };
+  const actorRole = getVassalageRole(state, actorId);
+  const targetRole = getVassalageRole(state, targetId);
+  if (actorRole.overlordId) return { allowed: false, reason: 'ACTOR_IS_VASSAL' };
+  if (targetRole.overlordId) return { allowed: false, reason: 'TARGET_IS_VASSAL' };
   if (treatyType === 'PEACE' && !relationship.atWar) return { allowed: false, reason: 'NOT_AT_WAR' };
   if (treatyType !== 'PEACE' && relationship.atWar) return { allowed: false, reason: 'AT_WAR' };
   if (ACTIVE_TREATY_TYPES.includes(treatyType) && hasTreaty(relationship, treatyType)) {
@@ -215,6 +251,12 @@ export function canProposeTreaty(state, actorId, targetId, treatyType) {
   }
   if (treatyType === 'ALLIANCE' && !hasTreaty(relationship, 'NON_AGGRESSION')) {
     return { allowed: false, reason: 'REQUIRES_NON_AGGRESSION' };
+  }
+  if (treatyType === 'VASSALAGE') {
+    if (!hasTreaty(relationship, 'ALLIANCE')) return { allowed: false, reason: 'REQUIRES_ALLIANCE' };
+    if (targetRole.subjectIds.length > 0) return { allowed: false, reason: 'TARGET_HAS_VASSALS' };
+    if (state.factions[actorId].atWar.length > 0) return { allowed: false, reason: 'ACTOR_AT_WAR' };
+    if (state.factions[targetId].atWar.length > 0) return { allowed: false, reason: 'TARGET_AT_WAR' };
   }
   if (state.factions[actorId].credits < definition.cost) return { allowed: false, reason: 'INSUFFICIENT_CREDITS' };
   return { allowed: true, reason: null };
@@ -256,7 +298,54 @@ function shouldAcceptOffer(state, relationship, offer) {
     const warDuration = state.turn - (relationship.warStartedTurn ?? state.turn);
     return relationship.atWar && warDuration >= 3 && relationship.opinion >= -90;
   }
+  if (offer.type === 'VASSALAGE') {
+    const subjectId = relationship.factions.find((factionId) => factionId !== offer.proposedBy);
+    const overlordRole = getVassalageRole(state, offer.proposedBy);
+    const subjectRole = getVassalageRole(state, subjectId);
+    return hasTreaty(relationship, 'ALLIANCE')
+      && !overlordRole.overlordId
+      && !subjectRole.overlordId
+      && subjectRole.subjectIds.length === 0
+      && state.factions[offer.proposedBy].atWar.length === 0
+      && state.factions[subjectId].atWar.length === 0
+      && relationship.opinion >= VASSALAGE_RULES.minimumOpinion
+      && relationship.trust >= VASSALAGE_RULES.minimumTrust
+      && relationship.threat <= VASSALAGE_RULES.maximumThreat;
+  }
   return false;
+}
+
+function endSubjectTreaties(state, subjectId, vassalRelationship) {
+  for (const relationship of Object.values(state.diplomacy)) {
+    if (relationship === vassalRelationship || !relationship.factions.includes(subjectId)) continue;
+    for (const treaty of relationship.treaties) {
+      appendEvent(state, 'TREATY_BROKEN', {
+        factions: relationship.factions,
+        treatyType: treaty.type,
+        brokenBy: subjectId,
+        reason: 'VASSALAGE_ESTABLISHED',
+      });
+    }
+    relationship.treaties = [];
+    relationship.pendingOffer = null;
+    relationship.stance = deriveDiplomaticStance(relationship);
+  }
+}
+
+function activateVassalage(state, relationship, offer) {
+  const overlordId = offer.proposedBy;
+  const subjectId = relationship.factions.find((factionId) => factionId !== overlordId);
+  endSubjectTreaties(state, subjectId, relationship);
+  relationship.treaties = [];
+  relationship.vassalage = { overlordId, subjectId, startedTurn: state.turn };
+  relationship.opinion = clamp(relationship.opinion + 8, -100, 100);
+  relationship.trust = clamp(relationship.trust + 6, 0, 100);
+  relationship.threat = clamp(relationship.threat - 4, 0, 100);
+  appendEvent(state, 'VASSALAGE_ESTABLISHED', {
+    overlordId,
+    subjectId,
+    startedTurn: state.turn,
+  });
 }
 
 function activateTreaty(state, relationship, offer) {
@@ -286,6 +375,8 @@ function resolvePendingOffer(state, relationship) {
   if (accepted) {
     if (offer.type === 'PEACE') {
       setWarState(state, relationship.factions[0], relationship.factions[1], false);
+    } else if (offer.type === 'VASSALAGE') {
+      activateVassalage(state, relationship, offer);
     } else {
       activateTreaty(state, relationship, offer);
     }
@@ -316,9 +407,81 @@ export function breakTreaty(state, factionA, factionB, treatyType, brokenBy = fa
   return true;
 }
 
+export function canReleaseVassal(state, overlordId, subjectId) {
+  const relationship = getRelationship(state, overlordId, subjectId);
+  if (!relationship || !state.factions[overlordId] || !state.factions[subjectId]) {
+    return { allowed: false, reason: 'INVALID_FACTION_PAIR' };
+  }
+  if (!relationship.vassalage) return { allowed: false, reason: 'NO_VASSALAGE' };
+  if (relationship.vassalage.overlordId !== overlordId || relationship.vassalage.subjectId !== subjectId) {
+    return { allowed: false, reason: 'NOT_OVERLORD' };
+  }
+  return { allowed: true, reason: null };
+}
+
+export function releaseVassal(state, overlordId, subjectId) {
+  const availability = canReleaseVassal(state, overlordId, subjectId);
+  if (!availability.allowed) return { ok: false, ...availability };
+  const relationship = getRelationship(state, overlordId, subjectId);
+  relationship.vassalage = null;
+  relationship.opinion = clamp(relationship.opinion - 5, -100, 100);
+  relationship.trust = clamp(relationship.trust - 5, 0, 100);
+  relationship.stance = deriveDiplomaticStance(relationship);
+  appendEvent(state, 'VASSAL_RELEASED', { overlordId, subjectId });
+  return { ok: true, overlordId, subjectId };
+}
+
+export function canDeclareIndependence(state, subjectId, overlordId) {
+  const relationship = getRelationship(state, subjectId, overlordId);
+  if (!relationship || !state.factions[subjectId] || !state.factions[overlordId]) {
+    return { allowed: false, reason: 'INVALID_FACTION_PAIR' };
+  }
+  if (!relationship.vassalage) return { allowed: false, reason: 'NO_VASSALAGE' };
+  if (relationship.vassalage.subjectId !== subjectId || relationship.vassalage.overlordId !== overlordId) {
+    return { allowed: false, reason: 'NOT_SUBJECT' };
+  }
+  const turnsElapsed = state.turn - relationship.vassalage.startedTurn;
+  if (turnsElapsed < VASSALAGE_RULES.minimumTurnsBeforeIndependence) {
+    return {
+      allowed: false,
+      reason: 'VASSALAGE_MINIMUM_TERM',
+      turnsRemaining: VASSALAGE_RULES.minimumTurnsBeforeIndependence - turnsElapsed,
+    };
+  }
+  return { allowed: true, reason: null };
+}
+
+export function declareIndependence(state, subjectId, overlordId) {
+  const availability = canDeclareIndependence(state, subjectId, overlordId);
+  if (!availability.allowed) return { ok: false, ...availability };
+  const relationship = getRelationship(state, subjectId, overlordId);
+  relationship.vassalage = null;
+  relationship.opinion = Math.min(relationship.opinion, -60);
+  relationship.trust = Math.min(relationship.trust, 10);
+  relationship.threat = Math.max(relationship.threat, 65);
+  relationship.stance = deriveDiplomaticStance(relationship);
+  appendEvent(state, 'VASSAL_INDEPENDENCE_DECLARED', { subjectId, overlordId });
+  setWarState(state, subjectId, overlordId, true);
+  return { ok: true, subjectId, overlordId };
+}
+
+export function canSetWarState(state, factionA, factionB, active = true) {
+  const relationship = getRelationship(state, factionA, factionB);
+  if (!relationship || !state.factions[factionA] || !state.factions[factionB] || factionA === factionB) {
+    return { allowed: false, reason: 'INVALID_FACTION_PAIR' };
+  }
+  if (relationship.atWar === active) return { allowed: false, reason: active ? 'ALREADY_AT_WAR' : 'NOT_AT_WAR' };
+  if (!active) return { allowed: true, reason: null };
+  if (relationship.vassalage) return { allowed: false, reason: 'VASSALAGE_ACTIVE' };
+  if (getVassalageRole(state, factionA).overlordId) return { allowed: false, reason: 'ACTOR_IS_VASSAL' };
+  if (getVassalageRole(state, factionB).overlordId) return { allowed: false, reason: 'TARGET_IS_VASSAL' };
+  return { allowed: true, reason: null };
+}
+
 export function setWarState(state, factionA, factionB, active = true) {
   const relationship = getRelationship(state, factionA, factionB);
-  if (!relationship || relationship.atWar === active) return false;
+  const availability = canSetWarState(state, factionA, factionB, active);
+  if (!availability.allowed) return false;
 
   relationship.atWar = active;
   if (active) {
@@ -378,6 +541,7 @@ export function advanceDiplomacy(state) {
       trust: relationship.trust,
       threat: relationship.threat,
       treaties: relationship.treaties.map((treaty) => treaty.type),
+      vassalage: relationship.vassalage ? structuredClone(relationship.vassalage) : null,
       offerResolution,
     });
   }
@@ -415,6 +579,9 @@ export function assertDiplomacyInvariants(state) {
     if (!relationship.lastActions || typeof relationship.lastActions !== 'object') throw new Error(`Invalid ${key} action history`);
     if (!Array.isArray(relationship.modifiers)) throw new Error(`Invalid ${key} modifiers`);
     if (!Array.isArray(relationship.treaties)) throw new Error(`Invalid ${key} treaties`);
+    if (relationship.vassalage !== null && (typeof relationship.vassalage !== 'object' || Array.isArray(relationship.vassalage))) {
+      throw new Error(`Invalid ${key} vassalage`);
+    }
     if (relationship.atWar) {
       if (!Number.isInteger(relationship.warStartedTurn) || relationship.warStartedTurn < 1 || relationship.warStartedTurn > state.turn) {
         throw new Error(`Invalid ${key} war start`);
@@ -446,6 +613,18 @@ export function assertDiplomacyInvariants(state) {
         throw new Error(`Invalid treaty duration for ${key}`);
       }
     }
+    if (relationship.vassalage) {
+      const { overlordId, subjectId, startedTurn } = relationship.vassalage;
+      if (overlordId === subjectId || !relationship.factions.includes(overlordId) || !relationship.factions.includes(subjectId)) {
+        throw new Error(`Invalid vassalage roles for ${key}`);
+      }
+      if (!Number.isInteger(startedTurn) || startedTurn < 1 || startedTurn > state.turn) {
+        throw new Error(`Invalid vassalage start for ${key}`);
+      }
+      if (relationship.atWar || relationship.treaties.length > 0 || relationship.pendingOffer) {
+        throw new Error(`Vassalage cannot coexist with war, treaties, or offers: ${key}`);
+      }
+    }
     if (relationship.pendingOffer) {
       const offer = relationship.pendingOffer;
       if (!TREATY_DEFINITIONS[offer.type] || !relationship.factions.includes(offer.proposedBy)) {
@@ -462,6 +641,9 @@ export function assertDiplomacyInvariants(state) {
       }
       if (offer.type === 'ALLIANCE' && !hasTreaty(relationship, 'NON_AGGRESSION')) {
         throw new Error(`Alliance offer requires non-aggression pact: ${key}`);
+      }
+      if (offer.type === 'VASSALAGE' && !hasTreaty(relationship, 'ALLIANCE')) {
+        throw new Error(`Vassalage offer requires alliance: ${key}`);
       }
     }
 
@@ -488,6 +670,26 @@ export function assertDiplomacyInvariants(state) {
       }
       for (const field of ['opinion', 'trust', 'threat']) {
         if (!Number.isFinite(modifier[field])) throw new Error(`Invalid ${key} modifier ${field}`);
+      }
+    }
+  }
+
+  const subjectToOverlord = new Map();
+  const overlords = new Set();
+  for (const relationship of Object.values(state.diplomacy)) {
+    if (!relationship.vassalage) continue;
+    const { overlordId, subjectId } = relationship.vassalage;
+    if (subjectToOverlord.has(subjectId)) throw new Error(`Faction cannot have multiple overlords: ${subjectId}`);
+    subjectToOverlord.set(subjectId, overlordId);
+    overlords.add(overlordId);
+  }
+  for (const subjectId of subjectToOverlord.keys()) {
+    if (overlords.has(subjectId)) throw new Error(`Vassalage chains are not supported: ${subjectId}`);
+    if (state.factions[subjectId].atWar.length > 0) throw new Error(`Vassal faction cannot be at war: ${subjectId}`);
+    for (const relationship of Object.values(state.diplomacy)) {
+      if (!relationship.factions.includes(subjectId) || relationship.vassalage) continue;
+      if (relationship.treaties.length > 0 || relationship.pendingOffer || relationship.atWar) {
+        throw new Error(`Vassal faction cannot maintain independent treaties, offers, or wars: ${subjectId}`);
       }
     }
   }

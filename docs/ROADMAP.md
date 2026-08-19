@@ -7,7 +7,7 @@ This roadmap is the product architecture for Galaxy Command. The project is inte
 - **Complete:** Phase 1 — Interactive 3D Galaxy Foundation
 - **Complete:** Phase 2 — Galaxy Navigation & Strategic Map (trade routes remain tied to Phase 5 economy work)
 - **Complete:** Phase 3 — Galaxy Data & World Simulation
-- **In progress:** Phase 4 — Factions & Diplomacy (Phases 4A–4B relationship, action, and treaty foundations delivered)
+- **In progress:** Phase 4 — Factions & Diplomacy (Phases 4A–4C relationship, treaty, and vassalage foundations delivered)
 - **Delivered early as cross-cutting foundations:** Phase 15 versioned/recovery-safe persistence and Phase 16 keyboard, responsive, accessibility, browser, error-handling, and performance gates. Their broader late-game scope remains open.
 
 ## Foundation
@@ -32,7 +32,7 @@ Persistent world state, turn/time progression, population, resources, industry, 
 ### Phase 4 — Factions & Diplomacy
 Faction identities, relationships, reputation, treaties, alliances, war declarations, peace, vassals, and diplomatic actions.
 
-**Status: In progress.** Phase 4A delivers canonical bilateral relationships, opinion/trust/threat state, deterministic diplomatic actions and drift, synchronized war state, save migration, automated invariants, and a command HUD. Phase 4B adds deterministic treaty proposals and next-turn responses, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, treaty-aware stances, schema migration, and HUD controls. Vassalage and autonomous diplomatic AI remain for subsequent Phase 4 slices.
+**Status: In progress.** Phase 4A delivers canonical bilateral relationships, opinion/trust/threat state, deterministic diplomatic actions and drift, synchronized war state, save migration, automated invariants, and a command HUD. Phase 4B adds deterministic treaty proposals and next-turn responses, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, treaty-aware stances, schema migration, and HUD controls. Phase 4C adds alliance-gated vassalage, canonical overlord/subject roles, sovereign-diplomacy restrictions, controlled release, independence wars, schema migration, invariants, and HUD controls. Autonomous diplomatic AI remains for Phase 4D.
 
 ### Phase 5 — Economy & Industry
 Resources, production chains, specialization, markets, infrastructure, trade routes, shortages, logistics, blockades, and economic warfare.

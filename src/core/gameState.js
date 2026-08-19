@@ -1,6 +1,6 @@
 import { assertDiplomacyInvariants, createDiplomacyState, ensureDiplomacyState } from './diplomacy.js';
 
-export const GAME_STATE_VERSION = 4;
+export const GAME_STATE_VERSION = 5;
 export const PLAYER_FACTION_ID = 'aurora';
 
 const POPULATION_SCALE = Object.freeze({

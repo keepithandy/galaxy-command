@@ -4,14 +4,14 @@ Galaxy Command stores campaigns in a schema-versioned JSON envelope. Save schema
 
 ## Current envelope
 
-Schema version 4 has this top-level shape:
+Schema version 5 has this top-level shape:
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "savedAt": "2026-08-19T12:00:00.000Z",
   "state": {
-    "version": 4,
+    "version": 5,
     "seed": 1337,
     "turn": 5,
     "year": 1,
@@ -39,6 +39,7 @@ Schema version 4 has this top-level shape:
           }
         ],
         "pendingOffer": null,
+        "vassalage": null,
         "lastActions": {},
         "modifiers": []
       }
@@ -60,16 +61,17 @@ Schema version 4 has this top-level shape:
 - Raw version 1 state and schema version 1 envelopes migrate to version 2 by adding planet, fleet, event, history, and turn-report fields.
 - Version 2 state then migrates to version 3 by creating canonical bilateral diplomacy records and synchronizing legacy war lists.
 - Version 3 state migrates to version 4 by adding treaty, pending-offer, and war-duration fields to each bilateral relationship.
-- A current-schema save is never silently repaired; missing or invalid version 4 fields are treated as corruption.
+- Version 4 state migrates to version 5 by adding the canonical vassalage field to each bilateral relationship.
+- A current-schema save is never silently repaired; missing or invalid version 5 fields are treated as corruption.
 
 ## Browser storage and recovery
 
 Each named slot uses these keys:
 
 ```text
-galaxy-command-save-v4:<slot>
-galaxy-command-save-v4:<slot>:pending
-galaxy-command-save-v4:<slot>:recovery
+galaxy-command-save-v5:<slot>
+galaxy-command-save-v5:<slot>:pending
+galaxy-command-save-v5:<slot>:recovery
 ```
 
 Saving follows a recovery-safe sequence:
@@ -80,12 +82,12 @@ Saving follows a recovery-safe sequence:
 4. Replace the committed save.
 5. Remove the pending key.
 
-If a storage write fails, the committed last-known-good save remains available. Loading tries the committed copy, then recovery, then the legacy version 3, version 2, and version 1 keys. If candidates exist but none validate, loading reports a recoverable error and leaves the active campaign unchanged.
+If a storage write fails, the committed last-known-good save remains available. Loading tries the committed copy, then recovery, then the legacy version 4, version 3, version 2, and version 1 keys. If candidates exist but none validate, loading reports a recoverable error and leaves the active campaign unchanged.
 
 The default `autosave` slot is updated after each completed turn. The persistence API also accepts named slots for future campaign-slot interfaces.
 
 ## Import and export
 
-Export produces the same version 4 JSON envelope used by browser storage. Import migrates and validates the complete payload before writing the selected slot or applying it to the active campaign.
+Export produces the same version 5 JSON envelope used by browser storage. Import migrates and validates the complete payload before writing the selected slot or applying it to the active campaign.
 
 Persistence behavior is covered in `test/save.test.js`, with a browser smoke path in `test/browser/app.spec.js`.

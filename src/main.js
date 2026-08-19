@@ -8,12 +8,17 @@ import { simulateTurn } from './core/simulation.js';
 import { assignFleetDestination, getReachableSystemIds } from './core/fleetMovement.js';
 import {
   breakTreaty,
+  canDeclareIndependence,
   canPerformDiplomaticAction,
   canProposeTreaty,
+  canReleaseVassal,
+  canSetWarState,
+  declareIndependence,
   DIPLOMATIC_ACTIONS,
   getRelationship,
   performDiplomaticAction,
   proposeTreaty,
+  releaseVassal,
   setWarState,
   TREATY_DEFINITIONS,
 } from './core/diplomacy.js';
@@ -397,6 +402,14 @@ function diplomaticActionReason(availability) {
   if (availability.reason === 'NOT_AT_WAR') return 'Only available during war';
   if (availability.reason === 'TREATY_ACTIVE') return 'Treaty already active';
   if (availability.reason === 'REQUIRES_NON_AGGRESSION') return 'Requires an active non-aggression pact';
+  if (availability.reason === 'REQUIRES_ALLIANCE') return 'Requires an active alliance';
+  if (availability.reason === 'VASSALAGE_ACTIVE') return 'Vassalage already defines this relationship';
+  if (availability.reason === 'ACTOR_IS_VASSAL') return 'A subject cannot conduct independent diplomacy';
+  if (availability.reason === 'TARGET_IS_VASSAL') return 'This faction is already a subject';
+  if (availability.reason === 'TARGET_HAS_VASSALS') return 'An overlord cannot become a subject';
+  if (availability.reason === 'ACTOR_AT_WAR') return 'End current wars before proposing vassalage';
+  if (availability.reason === 'TARGET_AT_WAR') return 'The target must be at peace before vassalage';
+  if (availability.reason === 'VASSALAGE_MINIMUM_TERM') return `Independence available in ${availability.turnsRemaining} turn(s)`;
   return availability.allowed ? '' : 'Unavailable';
 }
 
@@ -420,19 +433,42 @@ function showDiplomacy() {
           const reason = diplomaticActionReason(availability);
           return `<button type="button" data-diplomacy-action="${actionId}" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${reason}">${action.label}${action.cost ? ` · ${action.cost} CR` : ''}</button>`;
         }).join('');
-        const proposalTypes = relationship.atWar ? ['PEACE'] : ['NON_AGGRESSION', 'ALLIANCE'];
+        const proposalTypes = relationship.atWar
+          ? ['PEACE']
+          : (relationship.vassalage ? [] : ['NON_AGGRESSION', 'ALLIANCE', 'VASSALAGE']);
         const proposalActions = proposalTypes.map((treatyType) => {
           const treaty = TREATY_DEFINITIONS[treatyType];
           const availability = canProposeTreaty(gameState, gameState.playerFaction, target.id, treatyType);
           const reason = diplomaticActionReason(availability);
           return `<button type="button" data-treaty-proposal="${treatyType}" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${reason}">PROPOSE ${treaty.label.toUpperCase()}${treaty.cost ? ` · ${treaty.cost} CR` : ''}</button>`;
         }).join('');
-        const activeTreaties = relationship.treaties.length > 0
-          ? relationship.treaties.map((treaty) => `<div class="treaty-chip"><span>${TREATY_DEFINITIONS[treaty.type].label} · ${treaty.expiresTurn - gameState.turn} turns</span><button type="button" data-break-treaty="${treaty.type}" data-target-faction="${target.id}">BREAK</button></div>`).join('')
+        const activeTreaties = relationship.treaties
+          .map((treaty) => `<div class="treaty-chip"><span>${TREATY_DEFINITIONS[treaty.type].label} · ${treaty.expiresTurn - gameState.turn} turns</span><button type="button" data-break-treaty="${treaty.type}" data-target-faction="${target.id}">BREAK</button></div>`)
+          .join('');
+        const vassalage = relationship.vassalage;
+        const playerIsOverlord = vassalage?.overlordId === gameState.playerFaction;
+        const vassalageStatus = vassalage
+          ? `<div class="treaty-chip vassalage-chip"><span>${playerIsOverlord ? 'SUBJECT' : 'OVERLORD'} · ${gameState.turn - vassalage.startedTurn} turns</span></div>`
+          : '';
+        const relationshipStatus = activeTreaties || vassalageStatus
+          ? `${activeTreaties}${vassalageStatus}`
           : '<span class="muted treaty-empty">No active treaties</span>';
         const pendingOffer = relationship.pendingOffer
           ? `<div class="pending-offer">PENDING · ${TREATY_DEFINITIONS[relationship.pendingOffer.type].label.toUpperCase()} · RESOLVES NEXT TURN</div>`
           : '';
+        let sovereignAction = '';
+        if (vassalage) {
+          if (playerIsOverlord) {
+            const availability = canReleaseVassal(gameState, gameState.playerFaction, target.id);
+            sovereignAction = `<button type="button" data-release-vassal="true" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${diplomaticActionReason(availability)}">RELEASE VASSAL</button>`;
+          } else {
+            const availability = canDeclareIndependence(gameState, gameState.playerFaction, target.id);
+            sovereignAction = `<button type="button" class="danger-action" data-declare-independence="true" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${diplomaticActionReason(availability)}">DECLARE INDEPENDENCE</button>`;
+          }
+        } else if (!relationship.atWar) {
+          const availability = canSetWarState(gameState, gameState.playerFaction, target.id, true);
+          sovereignAction = `<button type="button" class="danger-action" data-declare-war="true" data-target-faction="${target.id}" ${availability.allowed ? '' : 'disabled'} title="${diplomaticActionReason(availability)}">DECLARE WAR</button>`;
+        }
         return `
           <section class="diplomacy-card" data-relationship="${target.id}">
             <div class="diplomacy-faction"><span class="planet-mark" style="background:${target.color}"></span><strong>${target.name}</strong><b>${relationship.stance}</b></div>
@@ -441,8 +477,8 @@ function showDiplomacy() {
               <span>Trust <b>${relationship.trust}</b></span>
               <span>Threat <b>${relationship.threat}</b></span>
             </div>
-            <div class="treaty-list">${activeTreaties}${pendingOffer}</div>
-            <div class="diplomacy-actions">${actions}${proposalActions}${relationship.atWar ? '' : `<button type="button" class="danger-action" data-declare-war="true" data-target-faction="${target.id}">DECLARE WAR</button>`}</div>
+            <div class="treaty-list">${relationshipStatus}${pendingOffer}</div>
+            <div class="diplomacy-actions">${actions}${proposalActions}${sovereignAction}</div>
           </section>
         `;
       }).join('')}
@@ -496,6 +532,26 @@ function showDiplomacy() {
       const autosaveSucceeded = saveAutosave();
       showDiplomacy();
       if (autosaveSucceeded) setSaveStatus(`WAR DECLARED · ${factionById(targetId).name.toUpperCase()}`);
+    });
+  });
+  content.querySelectorAll('[data-release-vassal]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetId = button.dataset.targetFaction;
+      const result = releaseVassal(gameState, gameState.playerFaction, targetId);
+      if (!result.ok) return;
+      const autosaveSucceeded = saveAutosave();
+      showDiplomacy();
+      if (autosaveSucceeded) setSaveStatus(`VASSAL RELEASED · ${factionById(targetId).name.toUpperCase()}`);
+    });
+  });
+  content.querySelectorAll('[data-declare-independence]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetId = button.dataset.targetFaction;
+      const result = declareIndependence(gameState, gameState.playerFaction, targetId);
+      if (!result.ok) return;
+      const autosaveSucceeded = saveAutosave();
+      showDiplomacy();
+      if (autosaveSucceeded) setSaveStatus(`INDEPENDENCE DECLARED · WAR WITH ${factionById(targetId).name.toUpperCase()}`);
     });
   });
 }
@@ -673,10 +729,15 @@ function advanceTurn() {
   const offerResolutions = report.diplomacyUpdated
     .map((update) => update.offerResolution)
     .filter(Boolean);
-  const signedCount = offerResolutions.filter((resolution) => resolution.accepted).length;
-  const rejectedCount = offerResolutions.length - signedCount;
+  const acceptedOffers = offerResolutions.filter((resolution) => resolution.accepted);
+  const treatyCount = acceptedOffers.filter((resolution) => ['NON_AGGRESSION', 'ALLIANCE'].includes(resolution.treatyType)).length;
+  const peaceCount = acceptedOffers.filter((resolution) => resolution.treatyType === 'PEACE').length;
+  const vassalageCount = acceptedOffers.filter((resolution) => resolution.treatyType === 'VASSALAGE').length;
+  const rejectedCount = offerResolutions.length - acceptedOffers.length;
   const diplomacySummary = [
-    signedCount ? `${signedCount} TREATY${signedCount === 1 ? '' : 'IES'} SIGNED` : null,
+    treatyCount ? `${treatyCount} TREATY${treatyCount === 1 ? '' : 'IES'} SIGNED` : null,
+    peaceCount ? `${peaceCount} PEACE ACCORD${peaceCount === 1 ? '' : 'S'} SIGNED` : null,
+    vassalageCount ? `${vassalageCount} VASSALAGE${vassalageCount === 1 ? '' : 'S'} ESTABLISHED` : null,
     rejectedCount ? `${rejectedCount} OFFER${rejectedCount === 1 ? '' : 'S'} REJECTED` : null,
   ].filter(Boolean).map((summary) => ` · ${summary}`).join('');
   navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}${diplomacySummary}`;

@@ -4,15 +4,41 @@ import test from 'node:test';
 import {
   assertDiplomacyInvariants,
   breakTreaty,
+  canDeclareIndependence,
   canPerformDiplomaticAction,
   canProposeTreaty,
+  canSetWarState,
+  declareIndependence,
   getRelationship,
+  getVassalageRole,
   hasTreaty,
   performDiplomaticAction,
   proposeTreaty,
+  releaseVassal,
 } from '../src/core/diplomacy.js';
 import { assertStateInvariants, createGameState } from '../src/core/gameState.js';
 import { setWar, simulateTurn } from '../src/core/simulation.js';
+
+function establishAlliance(state, actorId = 'aurora', targetId = 'independent') {
+  const relationship = getRelationship(state, actorId, targetId);
+  assert.equal(proposeTreaty(state, actorId, targetId, 'NON_AGGRESSION').ok, true);
+  simulateTurn(state);
+  relationship.opinion = 60;
+  relationship.trust = 70;
+  relationship.threat = 30;
+  relationship.stance = 'FRIENDLY';
+  assert.equal(proposeTreaty(state, actorId, targetId, 'ALLIANCE').ok, true);
+  simulateTurn(state);
+  return relationship;
+}
+
+function establishVassalage(state, overlordId = 'aurora', subjectId = 'independent') {
+  const relationship = establishAlliance(state, overlordId, subjectId);
+  assert.equal(proposeTreaty(state, overlordId, subjectId, 'VASSALAGE').ok, true);
+  simulateTurn(state);
+  assert.ok(relationship.vassalage);
+  return relationship;
+}
 
 test('creates exactly one canonical relationship for each faction pair', () => {
   const state = createGameState();
@@ -220,4 +246,88 @@ test('invariants reject a peace offer outside a war', () => {
   };
 
   assert.throws(() => assertStateInvariants(state), /Peace offer requires war/);
+});
+
+test('vassalage requires alliance and resolves deterministically into canonical roles', () => {
+  const first = createGameState(91);
+  const second = createGameState(91);
+
+  assert.equal(canProposeTreaty(first, 'aurora', 'independent', 'VASSALAGE').reason, 'REQUIRES_ALLIANCE');
+  establishAlliance(first);
+  establishAlliance(second);
+  assert.deepEqual(canProposeTreaty(first, 'aurora', 'independent', 'VASSALAGE'), {
+    allowed: true,
+    reason: null,
+  });
+  assert.equal(proposeTreaty(first, 'aurora', 'independent', 'VASSALAGE').ok, true);
+  assert.equal(proposeTreaty(second, 'aurora', 'independent', 'VASSALAGE').ok, true);
+  simulateTurn(first);
+  simulateTurn(second);
+
+  const relationship = getRelationship(first, 'aurora', 'independent');
+  assert.deepEqual(first, second);
+  assert.deepEqual(relationship.vassalage, {
+    overlordId: 'aurora',
+    subjectId: 'independent',
+    startedTurn: first.turn,
+  });
+  assert.equal(relationship.stance, 'VASSAL');
+  assert.deepEqual(relationship.treaties, []);
+  assert.deepEqual(getVassalageRole(first, 'aurora'), { overlordId: null, subjectIds: ['independent'] });
+  assert.deepEqual(getVassalageRole(first, 'independent'), { overlordId: 'aurora', subjectIds: [] });
+  assert.ok(first.events.some((event) => event.type === 'VASSALAGE_ESTABLISHED'));
+  assertStateInvariants(first);
+});
+
+test('subjects cannot conduct sovereign diplomacy or be targeted by declarations of war', () => {
+  const state = createGameState(92);
+  establishVassalage(state);
+
+  assert.equal(canPerformDiplomaticAction(state, 'independent', 'vanguard', 'IMPROVE_RELATIONS').reason, 'ACTOR_IS_VASSAL');
+  assert.equal(canProposeTreaty(state, 'independent', 'vanguard', 'NON_AGGRESSION').reason, 'ACTOR_IS_VASSAL');
+  assert.equal(canProposeTreaty(state, 'vanguard', 'independent', 'NON_AGGRESSION').reason, 'TARGET_IS_VASSAL');
+  assert.equal(canSetWarState(state, 'aurora', 'independent', true).reason, 'VASSALAGE_ACTIVE');
+  assert.equal(canSetWarState(state, 'vanguard', 'independent', true).reason, 'TARGET_IS_VASSAL');
+  assert.equal(setWar(state, 'vanguard', 'independent', true), false);
+  assertStateInvariants(state);
+});
+
+test('overlords can release subjects and subjects can declare independence after the minimum term', () => {
+  const released = createGameState(93);
+  const releasedRelationship = establishVassalage(released);
+  assert.deepEqual(releaseVassal(released, 'aurora', 'independent'), {
+    ok: true,
+    overlordId: 'aurora',
+    subjectId: 'independent',
+  });
+  assert.equal(releasedRelationship.vassalage, null);
+  assert.ok(released.events.some((event) => event.type === 'VASSAL_RELEASED'));
+  assertStateInvariants(released);
+
+  const independent = createGameState(94);
+  const independentRelationship = establishVassalage(independent);
+  assert.equal(canDeclareIndependence(independent, 'independent', 'aurora').reason, 'VASSALAGE_MINIMUM_TERM');
+  simulateTurn(independent);
+  simulateTurn(independent);
+  simulateTurn(independent);
+  assert.equal(canDeclareIndependence(independent, 'independent', 'aurora').allowed, true);
+  assert.equal(declareIndependence(independent, 'independent', 'aurora').ok, true);
+  assert.equal(independentRelationship.vassalage, null);
+  assert.equal(independentRelationship.atWar, true);
+  assert.equal(independentRelationship.stance, 'WAR');
+  assert.ok(independent.events.some((event) => event.type === 'VASSAL_INDEPENDENCE_DECLARED'));
+  assert.ok(independent.events.some((event) => event.type === 'WAR_DECLARED'));
+  assertStateInvariants(independent);
+});
+
+test('invariants reject multiple overlords for one subject', () => {
+  const state = createGameState(95);
+  const first = getRelationship(state, 'aurora', 'independent');
+  const second = getRelationship(state, 'independent', 'vanguard');
+  first.vassalage = { overlordId: 'aurora', subjectId: 'independent', startedTurn: state.turn };
+  second.vassalage = { overlordId: 'vanguard', subjectId: 'independent', startedTurn: state.turn };
+  first.stance = 'VASSAL';
+  second.stance = 'VASSAL';
+
+  assert.throws(() => assertStateInvariants(state), /multiple overlords/);
 });

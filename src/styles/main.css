@@ -60,6 +60,7 @@ body { background: radial-gradient(circle at 50% 45%, #111b3a 0%, #060914 34%, #
 .treaty-empty { font-size: 10px; }
 .treaty-chip { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 8px; border-left: 2px solid #64d39b; background: #10201c; color: #bce7d2; font-size: 9px; letter-spacing: .06em; }
 .treaty-chip button { padding: 4px 6px; border: 1px solid #527668; color: #ccebdd; background: transparent; font-size: 8px; cursor: pointer; }
+.vassalage-chip { border-left-color: #d7ad58; background: #251d0d; color: #f1d59c; }
 .pending-offer { padding: 7px 8px; border-left: 2px solid #e0b55c; background: #211b10; color: #ead39e; font-size: 9px; letter-spacing: .07em; }
 .diplomacy-actions .danger-action { border-color: #7d3f4b; color: #f0b7c0; background: #241117; }
 .diplomacy-actions .danger-action:hover:not(:disabled), .diplomacy-actions .danger-action:focus-visible { border-color: #d06375; background: #381820; }
