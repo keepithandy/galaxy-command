@@ -49,6 +49,7 @@ const panel = document.querySelector('.planet-panel');
 const content = document.querySelector('#planet-content');
 const selectionReadout = document.querySelector('#selection-readout');
 const navigationStatus = document.querySelector('#navigation-status');
+const zoomHint = document.querySelector('#zoom-hint');
 const closePanel = document.querySelector('#close-panel');
 const panelHeading = document.querySelector('#panel-heading');
 const galaxyViewButton = document.querySelector('#galaxy-view');
@@ -152,10 +153,15 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.minDistance = 5;
 controls.maxDistance = 115;
+controls.zoomToCursor = true;
 controls.target.set(0, 0, 0);
 
-const SYSTEM_VISIBILITY_DISTANCE = 68;
-const PLANET_VISIBILITY_DISTANCE = 44;
+const ZOOM_THRESHOLDS = Object.freeze({
+  systems: Object.freeze({ enter: 68, exit: 72 }),
+  planets: Object.freeze({ enter: 44, exit: 48 }),
+});
+const zoomVisibility = { systems: false, planets: false };
+let hasRevealedSystems = false;
 
 const strategicMap = createStrategicMap({ camera, controls, scene });
 controls.addEventListener('start', () => strategicMap.cancelTransition());
@@ -571,19 +577,44 @@ function syncFleetMarkers() {
   }
 }
 
+function updateZoomVisibility(cameraDistance) {
+  zoomVisibility.systems = zoomVisibility.systems
+    ? cameraDistance <= ZOOM_THRESHOLDS.systems.exit
+    : cameraDistance <= ZOOM_THRESHOLDS.systems.enter;
+  zoomVisibility.planets = zoomVisibility.planets
+    ? cameraDistance <= ZOOM_THRESHOLDS.planets.exit
+    : cameraDistance <= ZOOM_THRESHOLDS.planets.enter;
+  if (zoomVisibility.planets) zoomVisibility.systems = true;
+  if (zoomVisibility.systems) hasRevealedSystems = true;
+  return zoomVisibility;
+}
+
+function nearestSystemId(position) {
+  let nearestId = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const [systemId, { group }] of systemRecords) {
+    const distance = group.position.distanceToSquared(position);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestId = systemId;
+    }
+  }
+  return nearestId;
+}
+
 function syncGalaxyVisuals() {
   const filter = strategicMap.state.factionFilter;
   const focusedSystem = strategicMap.state.selectedSystem;
   const isGalaxyView = strategicMap.state.mode === 'galaxy';
   const cameraDistance = camera.position.distanceTo(controls.target);
-  const systemsVisible = cameraDistance <= SYSTEM_VISIBILITY_DISTANCE;
-  const planetsVisible = cameraDistance <= PLANET_VISIBILITY_DISTANCE;
+  const { systems: systemsVisible, planets: planetsVisible } = updateZoomVisibility(cameraDistance);
+  const visiblePlanetSystem = focusedSystem ?? nearestSystemId(controls.target);
+  zoomHint.hidden = hasRevealedSystems || !isGalaxyView;
   for (const [planetId, visual] of planetVisuals) {
     const planet = gameState.planets[planetId];
     const matches = filter === 'all' || planet.faction === filter;
     visual.mesh.material.color.set(factionColor(planet.faction, galaxy.factions));
-    const inFocusedSystem = visual.system.id === focusedSystem;
-    const inVisibleSystem = isGalaxyView || inFocusedSystem;
+    const inVisibleSystem = visual.system.id === visiblePlanetSystem;
     visual.mesh.visible = matches && planetsVisible && inVisibleSystem;
     visual.orbit.visible = matches && planetsVisible && inVisibleSystem;
   }

@@ -16,10 +16,12 @@
 #faction-filters { display: flex; gap: 5px; }
 #faction-filters button { min-height: 26px; padding: 6px 8px; }
 .navigation-status { position: fixed; z-index: 5; top: 130px; left: 28px; padding: 6px 9px; border-left: 2px solid #55b6ff; background: #050912cc; color: #8ea2b8; font-size: 9px; letter-spacing: .12em; pointer-events: none; }
+.zoom-hint { position: fixed; z-index: 5; top: 163px; left: 28px; padding: 5px 8px; border-left: 2px solid #d7ad58; background: #120f09cc; color: #d9be86; font-size: 8px; letter-spacing: .14em; pointer-events: none; }
 
 @media (max-width: 720px) {
   .strategic-toolbar { top: 68px; left: 12px; right: 12px; max-width: none; max-height: 150px; overflow-y: auto; flex-wrap: wrap; align-content: flex-start; }
   .filter-group { flex: 1 1 100%; padding: 6px; overflow-x: auto; }
   #faction-filters { min-width: max-content; }
   .navigation-status { top: 228px; left: 12px; max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .zoom-hint { top: 261px; left: 12px; }
 }

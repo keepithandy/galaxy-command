@@ -50,14 +50,18 @@ test('advances a seeded campaign and exposes the current turn', async ({ page })
 test('reveals system labels only after zooming into the galaxy', async ({ page }) => {
   await page.goto('/');
   const label = page.locator('.galaxy-label').first();
+  const hint = page.locator('#zoom-hint');
   await expect(label).toBeHidden();
+  await expect(hint).toBeVisible();
 
   await page.locator('#galaxy-canvas').hover();
   await page.mouse.wheel(0, -1200);
   await expect.poll(async () => label.isVisible()).toBe(true);
+  await expect(hint).toBeHidden();
 
   await page.mouse.wheel(0, 1600);
   await expect.poll(async () => label.isHidden()).toBe(true);
+  await expect(hint).toBeHidden();
 });
 
 test('saves and restores the current campaign from the HUD', async ({ page }) => {
