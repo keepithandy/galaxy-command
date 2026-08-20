@@ -154,6 +154,9 @@ controls.minDistance = 5;
 controls.maxDistance = 115;
 controls.target.set(0, 0, 0);
 
+const SYSTEM_VISIBILITY_DISTANCE = 68;
+const PLANET_VISIBILITY_DISTANCE = 44;
+
 const strategicMap = createStrategicMap({ camera, controls, scene });
 controls.addEventListener('start', () => strategicMap.cancelTransition());
 
@@ -572,13 +575,17 @@ function syncGalaxyVisuals() {
   const filter = strategicMap.state.factionFilter;
   const focusedSystem = strategicMap.state.selectedSystem;
   const isGalaxyView = strategicMap.state.mode === 'galaxy';
+  const cameraDistance = camera.position.distanceTo(controls.target);
+  const systemsVisible = cameraDistance <= SYSTEM_VISIBILITY_DISTANCE;
+  const planetsVisible = cameraDistance <= PLANET_VISIBILITY_DISTANCE;
   for (const [planetId, visual] of planetVisuals) {
     const planet = gameState.planets[planetId];
     const matches = filter === 'all' || planet.faction === filter;
     visual.mesh.material.color.set(factionColor(planet.faction, galaxy.factions));
     const inFocusedSystem = visual.system.id === focusedSystem;
-    visual.mesh.visible = matches && !isGalaxyView && inFocusedSystem;
-    visual.orbit.visible = matches && !isGalaxyView && inFocusedSystem;
+    const inVisibleSystem = isGalaxyView || inFocusedSystem;
+    visual.mesh.visible = matches && planetsVisible && inVisibleSystem;
+    visual.orbit.visible = matches && planetsVisible && inVisibleSystem;
   }
 
   for (const { labelElement, system, territory, star, halo } of systemRecords.values()) {
@@ -587,7 +594,9 @@ function syncGalaxyVisuals() {
     const isFocused = focusedSystem === system.id;
     territory.material.color.set(factionColor(owner, galaxy.factions));
     territory.material.opacity = isFocused ? 0.2 : (matches ? 0.045 : 0.012);
-    territory.visible = !isGalaxyView || matches;
+    territory.visible = systemsVisible && matches;
+    star.visible = systemsVisible && matches;
+    halo.visible = systemsVisible && matches;
     star.scale.setScalar(isFocused ? 1.55 : 1);
     halo.material.opacity = matches ? (isFocused ? 1 : 0.72) : 0.14;
     halo.scale.setScalar(isFocused ? 6.2 : 4.6);
@@ -596,12 +605,13 @@ function syncGalaxyVisuals() {
       faction: owner,
     });
     labelElement.dataset.filtered = String(!matches);
+    labelElement.hidden = !systemsVisible || !matches;
   }
 
   syncFleetMarkers();
   for (const { fleet, labelElement, marker } of fleetMarkers.values()) {
     const matches = filter === 'all' || fleet.faction === filter;
-    marker.visible = matches && !isGalaxyView && fleet.systemId === focusedSystem;
+    marker.visible = matches && systemsVisible && !isGalaxyView && fleet.systemId === focusedSystem;
     labelElement.dataset.filtered = String(!matches);
   }
 
@@ -609,6 +619,8 @@ function syncGalaxyVisuals() {
     button.setAttribute('aria-pressed', String(button.dataset.faction === filter));
   });
 }
+
+controls.addEventListener('change', syncGalaxyVisuals);
 
 function renderFilterControls() {
   const options = [{ id: 'all', name: 'All' }, ...galaxy.factions];

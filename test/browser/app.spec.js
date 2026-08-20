@@ -47,6 +47,19 @@ test('advances a seeded campaign and exposes the current turn', async ({ page })
   await expect(page.locator('#navigation-status')).toContainText('PLANETS UPDATED');
 });
 
+test('reveals system labels only after zooming into the galaxy', async ({ page }) => {
+  await page.goto('/');
+  const label = page.locator('.galaxy-label').first();
+  await expect(label).toBeHidden();
+
+  await page.locator('#galaxy-canvas').hover();
+  await page.mouse.wheel(0, -1200);
+  await expect.poll(async () => label.isVisible()).toBe(true);
+
+  await page.mouse.wheel(0, 1600);
+  await expect.poll(async () => label.isHidden()).toBe(true);
+});
+
 test('saves and restores the current campaign from the HUD', async ({ page }) => {
   await page.goto('/');
   await page.locator('#save-game').click();
