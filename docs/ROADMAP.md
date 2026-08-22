@@ -15,7 +15,7 @@ This roadmap is the product architecture for Galaxy Command. The project is inte
 ### Phase 1 — Interactive 3D Galaxy Foundation
 Three.js/Vite renderer, starfield, star systems, orbiting planets, data-driven planet inspection, faction-aware visuals, and responsive command HUD.
 
-**Status: Complete.** The renderer, data-driven galaxy, inspection surfaces, faction visuals, and command HUD are integrated and covered by build/browser checks.
+**Status: Complete.** The renderer, data-driven galaxy, inspection surfaces, faction visuals, and command HUD are integrated and covered by build/browser checks. Renderer v2 adds structured spiral placement (core, arms, and outer fringe), deliberate system selection/hover feedback, and a system-information surface while preserving the existing Galaxy → System → Planet navigation contract.
 
 ### Phase 2 — Galaxy Navigation & Strategic Map
 System focus, galaxy/system/planet camera transitions, labels, faction territory overlays, fleet markers, trade routes, strategic filters, and navigation state.

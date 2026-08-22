@@ -65,8 +65,7 @@ function createStarField({ random, count, galaxyRadius, disk = false }) {
   }));
 }
 
-function createCore(random) {
-  const count = 700;
+function createCore(random, count = 700) {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const color = new THREE.Color();
@@ -95,12 +94,21 @@ function createCore(random) {
   }));
 }
 
+function backdropDensity() {
+  if (typeof window === 'undefined') return { disk: 2600, core: 700, background: 1700 };
+  const compactDisplay = window.matchMedia('(max-width: 720px)').matches;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (compactDisplay || reducedMotion) return { disk: 1500, core: 420, background: 900 };
+  return { disk: 2600, core: 700, background: 1700 };
+}
+
 export function createGalaxyBackdrop(random) {
+  const density = backdropDensity();
   const group = new THREE.Group();
   const glowTexture = makeGlowTexture();
-  const disk = createStarField({ random, count: 2600, galaxyRadius: 52, disk: true });
-  const core = createCore(random);
-  const background = createStarField({ random, count: 1700, galaxyRadius: 52 });
+  const disk = createStarField({ random, count: density.disk, galaxyRadius: 52, disk: true });
+  const core = createCore(random, density.core);
+  const background = createStarField({ random, count: density.background, galaxyRadius: 52 });
   const coreGlow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTexture,
     color: 0xffd59b,

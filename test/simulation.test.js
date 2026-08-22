@@ -4,6 +4,7 @@ import test from 'node:test';
 import { generateGalaxy } from '../src/core/galaxyGeneration.js';
 import { assertStateInvariants, createGameState, hydrateGalaxyState } from '../src/core/gameState.js';
 import { assignFleetDestination, getReachableSystemIds } from '../src/core/fleetMovement.js';
+import { parseCampaignSeed } from '../src/core/seed.js';
 import { simulateTurn } from '../src/core/simulation.js';
 
 function createSeededState(seed) {
@@ -19,6 +20,29 @@ test('procedural galaxy generation is deterministic by seed', () => {
   assert.notDeepEqual(first, different);
   assert.equal(first.systems.length, 4);
   assert.equal(first.systems[0].planets.length, 2);
+});
+
+test('only explicit integer URL seeds select a procedural campaign', () => {
+  assert.equal(parseCampaignSeed(null), null);
+  assert.equal(parseCampaignSeed(''), null);
+  assert.equal(parseCampaignSeed('9001'), 9001);
+  assert.equal(parseCampaignSeed('not-a-seed'), null);
+});
+
+test('procedural galaxies form a structured core, spiral arms, and outer fringe', () => {
+  const galaxy = generateGalaxy({ seed: 8675309, systemCount: 24, planetsPerSystem: 1 });
+  const regions = galaxy.systems.reduce((counts, system) => {
+    counts[system.region] = (counts[system.region] ?? 0) + 1;
+    return counts;
+  }, {});
+  const radii = galaxy.systems.map((system) => Math.hypot(system.position[0], system.position[2]));
+
+  assert.ok(regions.core >= 3);
+  assert.ok(regions.arm >= 15);
+  assert.ok(regions.outer >= 2);
+  assert.ok(Math.min(...radii) < 10);
+  assert.ok(Math.max(...radii) > 55);
+  assert.ok(galaxy.systems.every((system) => Number.isInteger(system.strategicValue)));
 });
 
 test('turn simulation is deterministic and exposes a report', () => {

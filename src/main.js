@@ -4,6 +4,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 
 import { createGameState, hydrateGalaxyState } from './core/gameState.js';
 import { generateGalaxy } from './core/galaxyGeneration.js';
+import { parseCampaignSeed } from './core/seed.js';
 import { simulateTurn } from './core/simulation.js';
 import { assignFleetDestination, getReachableSystemIds } from './core/fleetMovement.js';
 import {
@@ -36,8 +37,8 @@ import { createGalaxyBackdrop, createSystemHalo } from './visuals/galaxyBackdrop
 import './styles/main.css';
 import './styles/strategic-map.css';
 
-const requestedSeed = Number(new URLSearchParams(location.search).get('seed'));
-const proceduralSeed = Number.isSafeInteger(requestedSeed) ? requestedSeed : null;
+const requestedSeedValue = new URLSearchParams(location.search).get('seed');
+const proceduralSeed = parseCampaignSeed(requestedSeedValue);
 const galaxy = proceduralSeed === null ? galaxyData.galaxy : generateGalaxy({ seed: proceduralSeed });
 const gameState = hydrateGalaxyState(createGameState(proceduralSeed ?? 1337), galaxy);
 const factions = new Map(galaxy.factions.map((faction) => [faction.id, faction]));
@@ -117,8 +118,13 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x03050a);
 scene.fog = new THREE.FogExp2(0x03050a, 0.0022);
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 40, 64);
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 52, 74);
+
+function viewportPixelRatio() {
+  const compactDisplay = window.matchMedia('(max-width: 720px)').matches;
+  return Math.min(devicePixelRatio, compactDisplay ? 1.5 : 2);
+}
 
 let renderer;
 try {
@@ -134,7 +140,7 @@ try {
 if (!renderer) {
   fatalErrorRetry.addEventListener('click', () => window.location.reload());
 } else {
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(viewportPixelRatio());
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
@@ -150,8 +156,15 @@ app.appendChild(labelRenderer.domElement);
 const controls = new OrbitControls(camera, interactionElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.minDistance = 5;
-controls.maxDistance = 115;
+controls.enablePan = true;
+controls.screenSpacePanning = false;
+controls.panSpeed = 0.6;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.8;
+controls.minDistance = 4;
+controls.maxDistance = 145;
+controls.minPolarAngle = 0.18;
+controls.maxPolarAngle = Math.PI * 0.48;
 controls.target.set(0, 0, 0);
 
 const strategicMap = createStrategicMap({ camera, controls, scene });
@@ -166,6 +179,7 @@ const systemRecords = new Map();
 const planetVisuals = new Map();
 const fleetMarkers = new Map();
 let selected = null;
+let hoveredSystemId = null;
 
 function createSeededRandom(seed) {
   let value = seed >>> 0;
@@ -229,6 +243,22 @@ function createTerritoryRing(system) {
   return ring;
 }
 
+function createSystemFocusRing(color) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.22, 0.035, 6, 48),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.14;
+  ring.visible = false;
+  return ring;
+}
+
 function createSystem(system) {
   const group = new THREE.Group();
   group.position.fromArray(system.position);
@@ -248,6 +278,9 @@ function createSystem(system) {
   const territory = createTerritoryRing(system);
   group.add(territory);
 
+  const focusRing = createSystemFocusRing(system.starColor);
+  group.add(focusRing);
+
   const labelElement = createLabel(system.name);
   const label = new CSS2DObject(labelElement);
   label.position.set(0, 2.1, 0);
@@ -261,7 +294,15 @@ function createSystem(system) {
     planetVisuals.set(planet.id, { mesh, orbit, planet, system });
   });
 
-  systemRecords.set(system.id, { group, labelElement, star, halo, system, territory });
+  systemRecords.set(system.id, {
+    group,
+    labelElement,
+    star,
+    halo,
+    system,
+    territory,
+    focusRing,
+  });
   scene.add(group);
 }
 
@@ -340,6 +381,49 @@ function showPlanet(planetId) {
     <div class="stat"><span>Defense</span><b>${planet.defense}</b><i><em style="width:${planet.defense}%"></em></i></div>
     <div class="stat"><span>Development</span><b>${planet.development.toFixed(1)}</b><i><em style="width:${planet.development}%"></em></i></div>
     <div class="status-large">${visual.planet.status}</div>
+  `;
+  openInspectionPanel();
+}
+
+function showSystem(systemId) {
+  const record = systemRecords.get(systemId);
+  if (!record) return;
+  if (selected) selected.scale.setScalar(1);
+  selected = null;
+
+  const { system } = record;
+  const ownerId = systemFaction(system, gameState.planets);
+  const owner = factionById(ownerId);
+  const planets = system.planets.map((planet) => gameState.planets[planet.id]).filter(Boolean);
+  const strategicValue = Number.isFinite(system.strategicValue)
+    ? system.strategicValue
+    : Math.round(planets.reduce((total, planet) => total + planet.industry + planet.resources + planet.defense, 0)
+      / Math.max(planets.length * 3, 1));
+  const resources = Math.round(planets.reduce((total, planet) => total + planet.resources, 0));
+  const localFleets = Object.values(gameState.fleets).filter((fleet) => fleet.systemId === systemId);
+  const fleetStrength = localFleets.reduce((total, fleet) => total + fleet.strength, 0);
+  const region = (system.region ?? 'Meridian Reach').replaceAll('-', ' ').toUpperCase();
+
+  panel.dataset.mode = 'system';
+  panelHeading.textContent = 'SYSTEM COMMAND';
+  selectionReadout.textContent = `${system.name.toUpperCase()} SYSTEM`;
+  content.innerHTML = `
+    <div class="planet-title">
+      <span class="planet-mark" style="background:${owner.color}"></span>
+      <div><p class="eyebrow">${region}</p><h2>${system.name}</h2></div>
+    </div>
+    <div class="intel-row"><span>Controller</span><strong>${owner.name}</strong></div>
+    <div class="intel-row"><span>Planets</span><strong>${planets.length}</strong></div>
+    <div class="intel-row"><span>Strategic value</span><strong>${strategicValue}</strong></div>
+    <div class="intel-row"><span>Resources</span><strong>${resources}</strong></div>
+    <div class="intel-row"><span>Fleet presence</span><strong>${localFleets.length ? `${localFleets.length} · ${fleetStrength} STR` : 'NONE'}</strong></div>
+    <div class="system-planet-list">
+      <p class="eyebrow">WORLD STATUS</p>
+      ${system.planets.map((planet) => {
+        const statePlanet = gameState.planets[planet.id];
+        return `<div><span>${planet.name}</span><b>${statePlanet?.status ?? 'UNKNOWN'}</b></div>`;
+      }).join('')}
+    </div>
   `;
   openInspectionPanel();
 }
@@ -581,18 +665,22 @@ function syncGalaxyVisuals() {
     visual.orbit.visible = matches && !isGalaxyView && inFocusedSystem;
   }
 
-  for (const { labelElement, system, territory, star, halo } of systemRecords.values()) {
+  for (const { labelElement, system, territory, star, halo, focusRing } of systemRecords.values()) {
     const owner = systemFaction(system, gameState.planets);
     const matches = filter === 'all' || owner === filter;
     const isFocused = focusedSystem === system.id;
+    const isHovered = hoveredSystemId === system.id && !isFocused;
     territory.material.color.set(factionColor(owner, galaxy.factions));
-    territory.material.opacity = isFocused ? 0.2 : (matches ? 0.045 : 0.012);
+    territory.material.opacity = isFocused ? 0.22 : (isHovered ? 0.1 : (matches ? 0.045 : 0.012));
     territory.visible = !isGalaxyView || matches;
-    star.scale.setScalar(isFocused ? 1.55 : 1);
-    halo.material.opacity = matches ? (isFocused ? 1 : 0.72) : 0.14;
-    halo.scale.setScalar(isFocused ? 6.2 : 4.6);
+    star.scale.setScalar(isFocused ? 1.55 : (isHovered ? 1.25 : 1));
+    halo.material.opacity = matches ? (isFocused ? 1 : (isHovered ? 0.9 : 0.72)) : 0.14;
+    halo.scale.setScalar(isFocused ? 6.2 : (isHovered ? 5.35 : 4.6));
+    focusRing.material.color.set(factionColor(owner, galaxy.factions));
+    focusRing.visible = isFocused;
     setLabelState(labelElement, {
       selected: isFocused,
+      hovered: isHovered,
       faction: owner,
     });
     labelElement.dataset.filtered = String(!matches);
@@ -655,6 +743,9 @@ function applyLoadedState(nextState) {
   }
   syncGalaxyVisuals();
   if (activePanelMode === 'diplomacy') showDiplomacy();
+  else if (activePanelMode === 'system' && strategicMap.state.selectedSystem) {
+    showSystem(strategicMap.state.selectedSystem);
+  }
   else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
   else if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
   setSaveStatus(`LOADED TURN ${gameState.turn}`);
@@ -680,8 +771,30 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerStart = null;
 
+function pickSelectable(event) {
+  const bounds = interactionElement.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+  pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+  pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(selectable.filter((object) => object.visible), false)[0] ?? null;
+}
+
+function setHoveredSystem(systemId = null) {
+  if (hoveredSystemId === systemId) return;
+  hoveredSystemId = systemId;
+  interactionElement.style.cursor = systemId ? 'pointer' : 'grab';
+  syncGalaxyVisuals();
+}
+
 interactionElement.addEventListener('pointerdown', (event) => {
   pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+});
+
+interactionElement.addEventListener('pointermove', (event) => {
+  if (event.pointerType === 'touch') return;
+  const hit = pickSelectable(event);
+  setHoveredSystem(hit?.object.userData.systemId ?? null);
 });
 
 interactionElement.addEventListener('pointerup', (event) => {
@@ -691,12 +804,11 @@ interactionElement.addEventListener('pointerup', (event) => {
   if (travel > 6) return;
   interactionElement.focus({ preventScroll: true });
 
-  const bounds = interactionElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
-  pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(selectable.filter((object) => object.visible), false)[0];
-  if (!hit) return;
+  const hit = pickSelectable(event);
+  if (!hit) {
+    if (strategicMap.state.mode !== 'galaxy') returnToGalaxy();
+    return;
+  }
 
   const { type, planetId, systemId, fleetId } = hit.object.userData;
   if (type === 'planet') {
@@ -706,8 +818,7 @@ interactionElement.addEventListener('pointerup', (event) => {
   } else if (type === 'system') {
     const record = systemRecords.get(systemId);
     strategicMap.selectSystem(systemId, record.group.position);
-    closeInspectionPanel();
-    selectionReadout.textContent = `${record.system.name.toUpperCase()} SYSTEM`;
+    showSystem(systemId);
   } else if (type === 'fleet') {
     const record = systemRecords.get(systemId);
     strategicMap.selectSystem(systemId, record.group.position);
@@ -718,6 +829,8 @@ interactionElement.addEventListener('pointerup', (event) => {
 interactionElement.addEventListener('pointercancel', () => {
   pointerStart = null;
 });
+
+interactionElement.addEventListener('pointerleave', () => setHoveredSystem());
 
 closePanel.addEventListener('click', () => closeInspectionPanel());
 galaxyViewButton.addEventListener('click', returnToGalaxy);
@@ -743,6 +856,9 @@ function advanceTurn() {
   navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}${diplomacySummary}`;
   syncGalaxyVisuals();
   if (activePanelMode === 'diplomacy') showDiplomacy();
+  else if (activePanelMode === 'system' && strategicMap.state.selectedSystem) {
+    showSystem(strategicMap.state.selectedSystem);
+  }
   else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
   else if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
   saveAutosave();
@@ -805,6 +921,7 @@ function resize() {
   if (!renderer) return;
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(viewportPixelRatio());
   renderer.setSize(innerWidth, innerHeight);
   labelRenderer.setSize(innerWidth, innerHeight);
 }

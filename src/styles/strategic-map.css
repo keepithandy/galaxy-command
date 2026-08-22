@@ -1,6 +1,7 @@
 .label-layer { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
 .galaxy-label { padding: 3px 6px; border: 1px solid #34415699; background: #03050abb; color: #d9e4f3; font: 700 10px/1.2 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; text-shadow: 0 1px 8px #000; opacity: .78; transition: opacity .2s ease, transform .2s ease; }
 .galaxy-label[data-selected='true'] { opacity: 1; transform: scale(1.12); }
+.galaxy-label[data-hovered='true'] { opacity: 1; border-color: #a7d6ff; color: #f2f8ff; transform: scale(1.07); }
 .galaxy-label[data-filtered='true'] { opacity: .16; }
 .galaxy-label[data-faction='aurora'] { color: #75c5ff; border-color: #55b6ff88; }
 .galaxy-label[data-faction='vanguard'] { color: #ff818c; border-color: #ff5f6d88; }

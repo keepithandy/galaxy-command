@@ -2,13 +2,15 @@
 
 A browser-based 3D galaxy strategy game built around direct interaction with a living strategic map.
 
-Current build: `0.0.1e`
+Current build: `0.0.2` — Galaxy Renderer v2
 
 ## Current milestone
 
 Phases 1–3 are delivered: the interactive 3D galaxy, strategic navigation/map, and deterministic world simulation now work together. Players can move between galaxy, system, and planet focus; inspect live planet and fleet state; advance deterministic turns; use faction filters; and read territory ownership directly from the map. Versioned persistence and the first accessibility/performance release gates have also been delivered ahead of their broader roadmap phases.
 
 Phase 4 — Factions & Diplomacy — is in progress. Phases 4A–4C now provide canonical bilateral relationships, deterministic diplomatic actions and drift, treaty proposals, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, vassalage, release and independence lifecycles, save migration, and an interactive diplomacy HUD. Autonomous diplomatic AI remains for Phase 4D.
+
+Galaxy Renderer v2 now presents seeded campaigns as a coherent spiral galaxy with core, arm, and outer-fringe placement; camera pan/zoom limits; touch-aware controls; efficient particle-density scaling; system hover/selection feedback; and a system command surface. The command surface exposes the current controller, worlds, strategic value, resources, and fleet presence without coupling future conquest systems to the renderer.
 
 The architecture is deliberately data-driven so the visible galaxy can remain the primary command surface as deeper systems are implemented.
 
@@ -26,6 +28,8 @@ npm run build
 ```
 
 Start a deterministic procedural campaign by supplying a seed in the URL, for example `http://localhost:5173/?seed=9001`. Omitting `seed` loads the curated default galaxy.
+
+Click a star system to inspect it, click empty space (or press `G`/`Escape`) to return to the galaxy, drag to rotate, use the scroll wheel to zoom, and use two fingers to pan on touch devices.
 
 Run browser smoke tests across Chromium, Firefox, and WebKit:
 
