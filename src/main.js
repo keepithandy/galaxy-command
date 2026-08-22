@@ -4,6 +4,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 
 import { createGameState, hydrateGalaxyState } from './core/gameState.js';
 import { generateGalaxy } from './core/galaxyGeneration.js';
+import { parseCampaignSeed } from './core/seed.js';
 import { simulateTurn } from './core/simulation.js';
 import { assignFleetDestination, getReachableSystemIds } from './core/fleetMovement.js';
 import {
@@ -28,7 +29,10 @@ import galaxyData from './data/galaxy.json';
 import {
   createLabel,
   createStrategicMap,
+  createSystemViewLayer,
+  deriveSystemViewData,
   factionColor,
+  isGalaxyLabelVisible,
   setLabelState,
   systemFaction,
 } from './navigation/index.js';
@@ -36,8 +40,8 @@ import { createGalaxyBackdrop, createSystemHalo } from './visuals/galaxyBackdrop
 import './styles/main.css';
 import './styles/strategic-map.css';
 
-const requestedSeed = Number(new URLSearchParams(location.search).get('seed'));
-const proceduralSeed = Number.isSafeInteger(requestedSeed) ? requestedSeed : null;
+const requestedSeedValue = new URLSearchParams(location.search).get('seed');
+const proceduralSeed = parseCampaignSeed(requestedSeedValue);
 const galaxy = proceduralSeed === null ? galaxyData.galaxy : generateGalaxy({ seed: proceduralSeed });
 const gameState = hydrateGalaxyState(createGameState(proceduralSeed ?? 1337), galaxy);
 const factions = new Map(galaxy.factions.map((faction) => [faction.id, faction]));
@@ -52,6 +56,8 @@ const navigationStatus = document.querySelector('#navigation-status');
 const closePanel = document.querySelector('#close-panel');
 const panelHeading = document.querySelector('#panel-heading');
 const galaxyViewButton = document.querySelector('#galaxy-view');
+const backViewButton = document.querySelector('#back-view');
+const systemSelector = document.querySelector('#system-selector');
 const advanceTurnButton = document.querySelector('#advance-turn');
 const diplomacyViewButton = document.querySelector('#diplomacy-view');
 const saveGameButton = document.querySelector('#save-game');
@@ -117,8 +123,13 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x03050a);
 scene.fog = new THREE.FogExp2(0x03050a, 0.0022);
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 40, 64);
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 52, 74);
+
+function viewportPixelRatio() {
+  const compactDisplay = window.matchMedia('(max-width: 720px)').matches;
+  return Math.min(devicePixelRatio, compactDisplay ? 1.5 : 2);
+}
 
 let renderer;
 try {
@@ -134,7 +145,7 @@ try {
 if (!renderer) {
   fatalErrorRetry.addEventListener('click', () => window.location.reload());
 } else {
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(viewportPixelRatio());
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
@@ -150,12 +161,24 @@ app.appendChild(labelRenderer.domElement);
 const controls = new OrbitControls(camera, interactionElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.minDistance = 5;
-controls.maxDistance = 115;
+controls.enablePan = true;
+controls.screenSpacePanning = false;
+controls.panSpeed = 0.6;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.8;
+controls.minDistance = 4;
+controls.maxDistance = 145;
+controls.minPolarAngle = 0.18;
+controls.maxPolarAngle = Math.PI * 0.48;
 controls.target.set(0, 0, 0);
 
 const strategicMap = createStrategicMap({ camera, controls, scene });
 controls.addEventListener('start', () => strategicMap.cancelTransition());
+
+const galaxyLayer = new THREE.Group();
+galaxyLayer.name = 'galaxy-layer';
+scene.add(galaxyLayer);
+const systemViewLayer = createSystemViewLayer(scene);
 
 scene.add(new THREE.AmbientLight(0x667799, 0.7));
 const keyLight = new THREE.PointLight(0xffffff, 2.4, 80);
@@ -166,6 +189,7 @@ const systemRecords = new Map();
 const planetVisuals = new Map();
 const fleetMarkers = new Map();
 let selected = null;
+let hoveredSystemId = null;
 
 function createSeededRandom(seed) {
   let value = seed >>> 0;
@@ -209,8 +233,62 @@ function createPlanet(planet, system) {
     orbitAngle,
     orbitSpeed: 0.035 / Math.sqrt(planet.orbit),
   };
+  const resourceMarker = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.12, 0),
+    new THREE.MeshBasicMaterial({
+      color: 0x9de6bc,
+      transparent: true,
+      opacity: 0.55 + Math.min(statePlanet.resources, 100) / 250,
+    })
+  );
+  resourceMarker.position.set(planet.size + 0.34, 0.12, 0);
+  resourceMarker.scale.setScalar(0.8 + Math.min(statePlanet.resources, 100) / 125);
+  resourceMarker.userData.type = 'resource-indicator';
+  mesh.add(resourceMarker);
+
+  const worldLabelElement = createLabel(
+    `${planet.name} · R${Math.round(statePlanet.resources)}`,
+    'galaxy-label system-world-label'
+  );
+  const worldLabel = new CSS2DObject(worldLabelElement);
+  worldLabel.position.set(0, planet.size + 0.72, 0);
+  mesh.add(worldLabel);
   selectable.push(mesh);
-  return mesh;
+  return { mesh, resourceMarker, worldLabelElement };
+}
+
+function createSystemOwnershipRing(system) {
+  const outerRadius = Math.max(...system.planets.map((planet) => planet.orbit), 4) + 1.3;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(outerRadius - 0.22, outerRadius, 72),
+    new THREE.MeshBasicMaterial({
+      color: factionColor(systemFaction(system, gameState.planets), galaxy.factions),
+      transparent: true,
+      opacity: 0.24,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = -0.14;
+  ring.userData.type = 'system-ownership';
+  return ring;
+}
+
+function createStrategicBeacon(system) {
+  const { strategicValue } = deriveSystemViewData(system, gameState);
+  const height = 0.8 + strategicValue / 28;
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.14, height, 8),
+    new THREE.MeshBasicMaterial({
+      color: factionColor(systemFaction(system, gameState.planets), galaxy.factions),
+      transparent: true,
+      opacity: 0.64,
+    })
+  );
+  beacon.position.set(1.35, height / 2, -0.75);
+  beacon.userData.type = 'strategic-value';
+  return beacon;
 }
 
 function createTerritoryRing(system) {
@@ -229,10 +307,30 @@ function createTerritoryRing(system) {
   return ring;
 }
 
+function createSystemFocusRing(color) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.22, 0.035, 6, 48),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.14;
+  ring.visible = false;
+  return ring;
+}
+
 function createSystem(system) {
   const group = new THREE.Group();
   group.position.fromArray(system.position);
   group.userData.systemId = system.id;
+
+  const detailGroup = new THREE.Group();
+  detailGroup.position.fromArray(system.position);
+  detailGroup.userData.systemId = system.id;
 
   const star = new THREE.Mesh(
     new THREE.SphereGeometry(0.74, 24, 24),
@@ -248,6 +346,9 @@ function createSystem(system) {
   const territory = createTerritoryRing(system);
   group.add(territory);
 
+  const focusRing = createSystemFocusRing(system.starColor);
+  group.add(focusRing);
+
   const labelElement = createLabel(system.name);
   const label = new CSS2DObject(labelElement);
   label.position.set(0, 2.1, 0);
@@ -255,14 +356,38 @@ function createSystem(system) {
 
   system.planets.forEach((planet) => {
     const orbit = createOrbit(planet.orbit);
-    const mesh = createPlanet(planet, system);
-    group.add(orbit);
-    group.add(mesh);
-    planetVisuals.set(planet.id, { mesh, orbit, planet, system });
+    const { mesh, resourceMarker, worldLabelElement } = createPlanet(planet, system);
+    detailGroup.add(orbit);
+    detailGroup.add(mesh);
+    planetVisuals.set(planet.id, {
+      mesh,
+      orbit,
+      planet,
+      resourceMarker,
+      system,
+      worldLabelElement,
+    });
   });
 
-  systemRecords.set(system.id, { group, labelElement, star, halo, system, territory });
-  scene.add(group);
+  const ownershipRing = createSystemOwnershipRing(system);
+  const strategicBeacon = createStrategicBeacon(system);
+  detailGroup.add(ownershipRing);
+  detailGroup.add(strategicBeacon);
+  systemViewLayer.register(system.id, detailGroup);
+
+  systemRecords.set(system.id, {
+    detailGroup,
+    group,
+    labelElement,
+    star,
+    halo,
+    system,
+    territory,
+    focusRing,
+    ownershipRing,
+    strategicBeacon,
+  });
+  galaxyLayer.add(group);
 }
 
 function createFleetMarker(fleet, offsetIndex) {
@@ -280,7 +405,7 @@ function createFleetMarker(fleet, offsetIndex) {
   marker.position.set(-2.1 + offsetIndex * 0.75, 1.35, -1.5);
   marker.userData = { type: 'fleet', fleetId: fleet.id, systemId: fleet.systemId };
   selectable.push(marker);
-  systemRecord.group.add(marker);
+  systemRecord.detailGroup.add(marker);
 
   const labelElement = createLabel(fleet.name, 'galaxy-label fleet-label');
   const label = new CSS2DObject(labelElement);
@@ -299,11 +424,11 @@ function factionById(factionId) {
   return factions.get(factionId) ?? { id: 'neutral', name: 'Unknown', color: '#ffffff' };
 }
 
-function openInspectionPanel() {
+function openInspectionPanel({ focus = true } = {}) {
   if (!panel.classList.contains('open')) lastFocusedElement = document.activeElement;
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
-  panel.focus({ preventScroll: true });
+  if (focus) panel.focus({ preventScroll: true });
 }
 
 function closeInspectionPanel({ restoreFocus = true } = {}) {
@@ -342,6 +467,55 @@ function showPlanet(planetId) {
     <div class="status-large">${visual.planet.status}</div>
   `;
   openInspectionPanel();
+}
+
+function selectPlanet(planetId) {
+  const visual = planetVisuals.get(planetId);
+  if (!visual) return false;
+  const position = visual.mesh.getWorldPosition(new THREE.Vector3());
+  strategicMap.selectPlanet(planetId, visual.system.id, position);
+  showPlanet(planetId);
+  return true;
+}
+
+function showSystem(systemId, { focusPanel = true } = {}) {
+  const record = systemRecords.get(systemId);
+  if (!record) return;
+  if (selected) selected.scale.setScalar(1);
+  selected = null;
+
+  const { system } = record;
+  const view = deriveSystemViewData(system, gameState);
+  const owner = factionById(view.controller);
+  const region = (system.region ?? 'Meridian Reach').replaceAll('-', ' ').toUpperCase();
+
+  panel.dataset.mode = 'system';
+  panelHeading.textContent = 'SYSTEM COMMAND';
+  selectionReadout.textContent = `${system.name.toUpperCase()} SYSTEM`;
+  content.innerHTML = `
+    <div class="planet-title">
+      <span class="planet-mark" style="background:${owner.color}"></span>
+      <div><p class="eyebrow">${region}</p><h2>${system.name}</h2></div>
+    </div>
+    <div class="intel-row"><span>Controller</span><strong>${owner.name}</strong></div>
+    <div class="intel-row"><span>Planets</span><strong>${view.worlds.length}</strong></div>
+    <div class="intel-row"><span>Strategic value</span><strong>${view.strategicValue}</strong></div>
+    <div class="intel-row"><span>Resources</span><strong>${view.resources}</strong></div>
+    <div class="intel-row"><span>Fleet presence</span><strong>${view.fleets.length ? `${view.fleets.length} · ${view.fleetStrength} STR` : 'NONE'}</strong></div>
+    <div class="system-planet-list">
+      <p class="eyebrow">WORLD STATUS</p>
+      ${view.worlds.map((world) => `
+        <button type="button" data-system-planet="${world.id}" aria-label="Inspect ${world.name}">
+          <span>${world.name}<small>R${Math.round(world.resources)} · I${Math.round(world.industry)}</small></span>
+          <b>${world.status}</b>
+        </button>
+      `).join('')}
+    </div>
+  `;
+  openInspectionPanel({ focus: focusPanel });
+  content.querySelectorAll('[data-system-planet]').forEach((button) => {
+    button.addEventListener('click', () => selectPlanet(button.dataset.systemPlanet));
+  });
 }
 
 function showFleet(fleetId) {
@@ -560,9 +734,9 @@ function syncFleetMarkers() {
   for (const { fleet, marker } of fleetMarkers.values()) {
     const systemRecord = systemRecords.get(fleet.systemId);
     if (!systemRecord) continue;
-    if (marker.parent !== systemRecord.group) {
+    if (marker.parent !== systemRecord.detailGroup) {
       marker.parent?.remove(marker);
-      systemRecord.group.add(marker);
+      systemRecord.detailGroup.add(marker);
     }
     marker.userData.systemId = fleet.systemId;
   }
@@ -572,6 +746,8 @@ function syncGalaxyVisuals() {
   const filter = strategicMap.state.factionFilter;
   const focusedSystem = strategicMap.state.selectedSystem;
   const isGalaxyView = strategicMap.state.mode === 'galaxy';
+  const compactDisplay = window.matchMedia('(max-width: 720px)').matches;
+  systemViewLayer.setActiveSystem(isGalaxyView ? null : focusedSystem);
   for (const [planetId, visual] of planetVisuals) {
     const planet = gameState.planets[planetId];
     const matches = filter === 'all' || planet.faction === filter;
@@ -579,23 +755,63 @@ function syncGalaxyVisuals() {
     const inFocusedSystem = visual.system.id === focusedSystem;
     visual.mesh.visible = matches && !isGalaxyView && inFocusedSystem;
     visual.orbit.visible = matches && !isGalaxyView && inFocusedSystem;
+    visual.resourceMarker.material.opacity = 0.55 + Math.min(planet.resources, 100) / 250;
+    visual.resourceMarker.scale.setScalar(0.8 + Math.min(planet.resources, 100) / 125);
+    visual.worldLabelElement.textContent = `${visual.planet.name} · R${Math.round(planet.resources)}`;
+    visual.worldLabelElement.hidden = !matches
+      || isGalaxyView
+      || !inFocusedSystem
+      || (strategicMap.state.mode === 'planet' && strategicMap.state.selectedPlanet !== planetId);
   }
 
-  for (const { labelElement, system, territory, star, halo } of systemRecords.values()) {
+  const systemEntries = [...systemRecords.values()];
+  const matchingLabelTotal = systemEntries.filter(({ system }) => {
+    const owner = systemFaction(system, gameState.planets);
+    return filter === 'all' || owner === filter;
+  }).length;
+  let matchingLabelIndex = 0;
+  for (const {
+    labelElement,
+    system,
+    territory,
+    star,
+    halo,
+    focusRing,
+    ownershipRing,
+    strategicBeacon,
+  } of systemRecords.values()) {
     const owner = systemFaction(system, gameState.planets);
     const matches = filter === 'all' || owner === filter;
     const isFocused = focusedSystem === system.id;
+    const isHovered = hoveredSystemId === system.id && !isFocused;
     territory.material.color.set(factionColor(owner, galaxy.factions));
-    territory.material.opacity = isFocused ? 0.2 : (matches ? 0.045 : 0.012);
+    territory.material.opacity = isFocused ? 0.22 : (isHovered ? 0.1 : (matches ? 0.045 : 0.012));
     territory.visible = !isGalaxyView || matches;
-    star.scale.setScalar(isFocused ? 1.55 : 1);
-    halo.material.opacity = matches ? (isFocused ? 1 : 0.72) : 0.14;
-    halo.scale.setScalar(isFocused ? 6.2 : 4.6);
+    star.scale.setScalar(isFocused ? 1.55 : (isHovered ? 1.25 : 1));
+    halo.material.opacity = matches ? (isFocused ? 1 : (isHovered ? 0.9 : 0.72)) : 0.14;
+    halo.scale.setScalar(isFocused ? 6.2 : (isHovered ? 5.35 : 4.6));
+    focusRing.material.color.set(factionColor(owner, galaxy.factions));
+    focusRing.visible = isFocused;
     setLabelState(labelElement, {
       selected: isFocused,
+      hovered: isHovered,
       faction: owner,
     });
     labelElement.dataset.filtered = String(!matches);
+    labelElement.hidden = !isGalaxyLabelVisible({
+      index: matchingLabelIndex,
+      total: matchingLabelTotal,
+      compact: compactDisplay,
+      selected: isFocused,
+      hovered: isHovered,
+      filtered: !matches,
+      mode: strategicMap.state.mode,
+    });
+    if (matches) matchingLabelIndex += 1;
+    const view = deriveSystemViewData(system, gameState);
+    ownershipRing.material.color.set(factionColor(view.controller, galaxy.factions));
+    strategicBeacon.material.color.set(factionColor(view.controller, galaxy.factions));
+    strategicBeacon.scale.y = Math.max(0.7, view.strategicValue / 55);
   }
 
   syncFleetMarkers();
@@ -623,12 +839,57 @@ function renderFilterControls() {
   }
 }
 
-function returnToGalaxy() {
+function focusSystem(systemId, { focusPanel = true } = {}) {
+  const record = systemRecords.get(systemId);
+  if (!record) return false;
+  strategicMap.selectSystem(systemId, record.group.position);
+  showSystem(systemId, { focusPanel });
+  return true;
+}
+
+function renderSystemSelector() {
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'GALAXY VIEW';
+  systemSelector.appendChild(placeholder);
+  const systems = [...galaxy.systems].sort((left, right) => left.name.localeCompare(right.name));
+  for (const system of systems) {
+    const option = document.createElement('option');
+    option.value = system.id;
+    option.textContent = system.name;
+    systemSelector.appendChild(option);
+  }
+  systemSelector.addEventListener('change', () => {
+    if (systemSelector.value) focusSystem(systemSelector.value, { focusPanel: false });
+    else returnToGalaxy({ restorePanelFocus: false });
+  });
+}
+
+function returnToGalaxy({ restorePanelFocus = true } = {}) {
   strategicMap.returnToGalaxy();
-  closeInspectionPanel();
+  closeInspectionPanel({ restoreFocus: restorePanelFocus });
   if (selected) selected.scale.setScalar(1);
   selected = null;
   selectionReadout.textContent = 'NO SYSTEM SELECTED';
+}
+
+function navigateBack() {
+  if (strategicMap.state.mode === 'planet') {
+    if (selected) selected.scale.setScalar(1);
+    selected = null;
+    strategicMap.back();
+    showSystem(strategicMap.state.selectedSystem);
+    return true;
+  }
+  if (strategicMap.state.mode === 'system') {
+    returnToGalaxy();
+    return true;
+  }
+  if (panel.classList.contains('open')) {
+    closeInspectionPanel();
+    return true;
+  }
+  return false;
 }
 
 function navigationLabel(state) {
@@ -655,6 +916,9 @@ function applyLoadedState(nextState) {
   }
   syncGalaxyVisuals();
   if (activePanelMode === 'diplomacy') showDiplomacy();
+  else if (activePanelMode === 'system' && strategicMap.state.selectedSystem) {
+    showSystem(strategicMap.state.selectedSystem);
+  }
   else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
   else if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
   setSaveStatus(`LOADED TURN ${gameState.turn}`);
@@ -672,16 +936,48 @@ function saveAutosave() {
 
 strategicMap.subscribe((state) => {
   navigationStatus.textContent = navigationLabel(state);
+  backViewButton.disabled = state.mode === 'galaxy';
+  backViewButton.textContent = state.mode === 'planet' ? 'BACK TO SYSTEM' : 'BACK';
+  backViewButton.setAttribute(
+    'aria-label',
+    state.mode === 'planet' ? 'Return to selected star system' : 'Return to galaxy view'
+  );
+  galaxyViewButton.setAttribute('aria-pressed', String(state.mode === 'galaxy'));
+  systemSelector.value = state.selectedSystem ?? '';
   syncGalaxyVisuals();
 });
 navigationStatus.textContent = navigationLabel(strategicMap.state);
+backViewButton.disabled = true;
+galaxyViewButton.setAttribute('aria-pressed', 'true');
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerStart = null;
 
+function pickSelectable(event) {
+  const bounds = interactionElement.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+  pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+  pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(selectable.filter((object) => object.visible), false)[0] ?? null;
+}
+
+function setHoveredSystem(systemId = null) {
+  if (hoveredSystemId === systemId) return;
+  hoveredSystemId = systemId;
+  interactionElement.style.cursor = systemId ? 'pointer' : 'grab';
+  syncGalaxyVisuals();
+}
+
 interactionElement.addEventListener('pointerdown', (event) => {
   pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+});
+
+interactionElement.addEventListener('pointermove', (event) => {
+  if (event.pointerType === 'touch') return;
+  const hit = pickSelectable(event);
+  setHoveredSystem(hit?.object.userData.systemId ?? null);
 });
 
 interactionElement.addEventListener('pointerup', (event) => {
@@ -691,23 +987,17 @@ interactionElement.addEventListener('pointerup', (event) => {
   if (travel > 6) return;
   interactionElement.focus({ preventScroll: true });
 
-  const bounds = interactionElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
-  pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(selectable.filter((object) => object.visible), false)[0];
-  if (!hit) return;
+  const hit = pickSelectable(event);
+  if (!hit) {
+    navigateBack();
+    return;
+  }
 
   const { type, planetId, systemId, fleetId } = hit.object.userData;
   if (type === 'planet') {
-    const position = hit.object.getWorldPosition(new THREE.Vector3());
-    showPlanet(planetId);
-    strategicMap.selectPlanet(planetId, systemId, position);
+    selectPlanet(planetId);
   } else if (type === 'system') {
-    const record = systemRecords.get(systemId);
-    strategicMap.selectSystem(systemId, record.group.position);
-    closeInspectionPanel();
-    selectionReadout.textContent = `${record.system.name.toUpperCase()} SYSTEM`;
+    focusSystem(systemId);
   } else if (type === 'fleet') {
     const record = systemRecords.get(systemId);
     strategicMap.selectSystem(systemId, record.group.position);
@@ -719,8 +1009,11 @@ interactionElement.addEventListener('pointercancel', () => {
   pointerStart = null;
 });
 
+interactionElement.addEventListener('pointerleave', () => setHoveredSystem());
+
 closePanel.addEventListener('click', () => closeInspectionPanel());
 galaxyViewButton.addEventListener('click', returnToGalaxy);
+backViewButton.addEventListener('click', navigateBack);
 diplomacyViewButton.addEventListener('click', showDiplomacy);
 function advanceTurn() {
   const activePanelMode = panel.classList.contains('open') ? panel.dataset.mode : null;
@@ -743,6 +1036,9 @@ function advanceTurn() {
   navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}${diplomacySummary}`;
   syncGalaxyVisuals();
   if (activePanelMode === 'diplomacy') showDiplomacy();
+  else if (activePanelMode === 'system' && strategicMap.state.selectedSystem) {
+    showSystem(strategicMap.state.selectedSystem);
+  }
   else if (selected?.userData.type === 'planet') showPlanet(selected.userData.planetId);
   else if (selected?.userData.type === 'fleet') showFleet(selected.userData.fleetId);
   saveAutosave();
@@ -794,9 +1090,10 @@ importFile.addEventListener('change', async () => {
   }
 });
 addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') returnToGalaxy();
+  if (event.key === 'Escape') return navigateBack();
   if (event.repeat || event.target.matches?.('input, select, textarea')) return;
   if (event.key.toLowerCase() === 'g') returnToGalaxy();
+  if (event.key.toLowerCase() === 'f') systemSelector.focus({ preventScroll: true });
   if (event.key.toLowerCase() === 'n') advanceTurn();
   if (event.key.toLowerCase() === 'd') showDiplomacy();
 });
@@ -805,14 +1102,17 @@ function resize() {
   if (!renderer) return;
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(viewportPixelRatio());
   renderer.setSize(innerWidth, innerHeight);
   labelRenderer.setSize(innerWidth, innerHeight);
+  syncGalaxyVisuals();
 }
 
 addEventListener('resize', resize);
 galaxy.systems.forEach(createSystem);
 Object.values(gameState.fleets).forEach(createFleetMarker);
 renderFilterControls();
+renderSystemSelector();
 syncGalaxyVisuals();
 loading.classList.add('hidden');
 

@@ -19,6 +19,22 @@ test('keyboard shortcuts advance turns and keep focus visible', async ({ page })
   expect(outline).not.toBe('none');
 });
 
+test('system navigator exposes an accessible name and full keyboard entry path', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#diplomacy-view').click();
+  await page.keyboard.press('f');
+  const selector = page.getByLabel('Select a star system');
+  await expect(selector).toBeFocused();
+  await selector.selectOption('veyra');
+  await expect(selector).toBeFocused();
+  await expect(page.locator('#navigation-status')).toContainText('SYSTEM · VEYRA');
+  await expect(page.locator('#back-view')).toHaveAccessibleName('Return to galaxy view');
+  await selector.selectOption('');
+  await expect(selector).toBeFocused();
+  await expect(page.locator('#navigation-status')).toContainText('GALAXY VIEW');
+  await expect(page.locator('#back-view')).toBeDisabled();
+});
+
 test('reduced-motion preference disables decorative animation', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
