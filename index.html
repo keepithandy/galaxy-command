@@ -20,7 +20,12 @@
       </header>
 
       <nav class="strategic-toolbar" aria-label="Strategic map controls">
-        <button id="galaxy-view" type="button">GALAXY VIEW</button>
+        <button id="back-view" type="button" disabled>BACK</button>
+        <button id="galaxy-view" type="button" aria-pressed="true">GALAXY VIEW</button>
+        <label class="system-jump" for="system-selector">
+          <span>SYSTEM</span>
+          <select id="system-selector" aria-label="Select a star system"></select>
+        </label>
         <button id="advance-turn" type="button">NEXT TURN</button>
         <button id="diplomacy-view" type="button">DIPLOMACY</button>
         <button id="save-game" type="button">SAVE</button>
@@ -48,7 +53,7 @@
 
       <footer class="hud-bottom">
         <span id="selection-readout">NO SYSTEM SELECTED</span>
-        <span>DRAG TO ROTATE · TWO FINGERS TO PAN · SCROLL TO ZOOM · CLICK TO FOCUS · G RESET · N NEXT TURN · D DIPLOMACY</span>
+        <span id="controls-help">DRAG TO ROTATE · TWO FINGERS TO PAN · SCROLL TO ZOOM · CLICK TO FOCUS · F SYSTEMS · ESC BACK · G GALAXY · N NEXT TURN · D DIPLOMACY</span>
       </footer>
 
       <div id="loading" class="loading">INITIALIZING GALAXY...</div>
@@ -58,7 +63,7 @@
         <p id="fatal-error-message"></p>
         <button id="fatal-error-retry" type="button">RETRY INITIALIZATION</button>
       </section>
-      <canvas id="galaxy-canvas" tabindex="0" aria-label="Interactive three-dimensional galaxy map"></canvas>
+      <canvas id="galaxy-canvas" tabindex="0" aria-label="Interactive three-dimensional galaxy map" aria-describedby="controls-help"></canvas>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

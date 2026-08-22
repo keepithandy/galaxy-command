@@ -39,7 +39,10 @@ body { background: radial-gradient(circle at 50% 45%, #111b3a 0%, #060914 34%, #
 .status-large { margin-top: 18px; padding: 10px; text-align: center; border: 1px solid #344156; color: #b7c5d8; font-size: 10px; font-weight: 700; letter-spacing: .16em; }
 .system-planet-list { display: grid; gap: 7px; margin-top: 18px; padding: 11px; border: 1px solid #263247; background: #090f1a; }
 .system-planet-list .eyebrow { margin-bottom: 2px; }
-.system-planet-list div { display: flex; justify-content: space-between; gap: 12px; color: #95a5bb; font-size: 11px; }
+.system-planet-list button { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 38px; padding: 7px 8px; border: 1px solid #263247; color: #95a5bb; background: #0d1623; font: 500 11px/1.2 system-ui, sans-serif; text-align: left; cursor: pointer; }
+.system-planet-list button:hover, .system-planet-list button:focus-visible { border-color: #6cbbff; background: #142238; }
+.system-planet-list button span { display: grid; gap: 3px; }
+.system-planet-list button small { color: #71839a; font-size: 8px; letter-spacing: .08em; }
 .system-planet-list b { color: #d7e2f1; font-size: 10px; letter-spacing: .06em; }
 .fleet-route { display: grid; gap: 8px; margin-top: 18px; }
 .fleet-route label { color: #738197; font-size: 10px; letter-spacing: .12em; }
@@ -93,4 +96,5 @@ button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focu
   .status { display: none; }
   .hud-panel { top: 250px; right: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 310px); overflow-y: auto; }
   .hud-bottom { flex-direction: column; gap: 6px; padding: 10px 12px; }
+  .system-planet-list button { min-height: 44px; }
 }

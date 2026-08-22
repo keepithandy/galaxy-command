@@ -2,7 +2,7 @@
 
 A browser-based 3D galaxy strategy game built around direct interaction with a living strategic map.
 
-Current build: `0.0.2` — Galaxy Renderer v2
+Current build: `0.0.3` — Galaxy Renderer v2.1 System View
 
 ## Current milestone
 
@@ -10,7 +10,7 @@ Phases 1–3 are delivered: the interactive 3D galaxy, strategic navigation/map,
 
 Phase 4 — Factions & Diplomacy — is in progress. Phases 4A–4C now provide canonical bilateral relationships, deterministic diplomatic actions and drift, treaty proposals, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, vassalage, release and independence lifecycles, save migration, and an interactive diplomacy HUD. Autonomous diplomatic AI remains for Phase 4D.
 
-Galaxy Renderer v2 now presents seeded campaigns as a coherent spiral galaxy with core, arm, and outer-fringe placement; camera pan/zoom limits; touch-aware controls; efficient particle-density scaling; system hover/selection feedback; and a system command surface. The command surface exposes the current controller, worlds, strategic value, resources, and fleet presence without coupling future conquest systems to the renderer.
+Galaxy Renderer v2.1 adds a persistent, dedicated System View scene layer without rebuilding the galaxy. Selected systems expose spatial planet, ownership, resource, strategic-value, and fleet cues; a keyboard-accessible system selector; and camera-bookmarked back navigation. The command surface remains observational and does not introduce conquest, economy, or diplomacy mechanics.
 
 The architecture is deliberately data-driven so the visible galaxy can remain the primary command surface as deeper systems are implemented.
 
@@ -29,7 +29,7 @@ npm run build
 
 Start a deterministic procedural campaign by supplying a seed in the URL, for example `http://localhost:5173/?seed=9001`. Omitting `seed` loads the curated default galaxy.
 
-Click a star system to inspect it, click empty space (or press `G`/`Escape`) to return to the galaxy, drag to rotate, use the scroll wheel to zoom, and use two fingers to pan on touch devices.
+Click a star system or choose one from the System selector to enter System View. Select a world from its spatial marker or command panel to enter Planet View. Click empty space, use Back, or press `Escape` to move up one level; press `G` to return directly to the galaxy. Drag to rotate, use the scroll wheel to zoom, and use two fingers to pan on touch devices.
 
 Run browser smoke tests across Chromium, Firefox, and WebKit:
 
@@ -50,7 +50,7 @@ The CI workflow runs unit tests, production builds, performance budgets, and bro
 
 Saves use a versioned JSON envelope. The current schema is version 5; older version 1–4 saves are migrated when loaded. Autosaves are written through a pending copy and retain the previous valid payload as a recovery copy if a write fails. The HUD provides Save, Load, Export, and Import controls. Imported files are validated before they can replace the current campaign. See [`docs/SAVE_FORMAT.md`](docs/SAVE_FORMAT.md) for the schema and recovery contract.
 
-Keyboard shortcuts: `G` returns to the galaxy view, `N` advances a turn, `D` opens diplomatic command, and `Escape` closes the inspection panel or returns to the galaxy view. The interface respects the operating system's reduced-motion preference.
+Keyboard shortcuts: `F` focuses the system selector, `Escape` moves back one navigation level, `G` returns directly to Galaxy View, `N` advances a turn, and `D` opens diplomatic command. The interface respects the operating system's reduced-motion preference.
 
 ## Architecture
 
@@ -81,6 +81,7 @@ Core modules currently include:
 - `src/core/events.js` — dynamic events and intelligence-event hooks
 - `src/core/save.js` — versioned browser save slots
 - `src/navigation/` — strategic navigation state, faction territories, and map labels
+- `src/navigation/systemView.js` — persistent System View layer, deterministic command data, and label-density policy
 - `docs/ROADMAP.md` — complete 19-phase product roadmap
 
 ## 19-phase roadmap

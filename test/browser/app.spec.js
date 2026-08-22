@@ -47,6 +47,31 @@ test('advances a seeded campaign and exposes the current turn', async ({ page })
   await expect(page.locator('#navigation-status')).toContainText('PLANETS UPDATED');
 });
 
+test('navigates galaxy, system, and planet views with keyboard-accessible controls', async ({ page }) => {
+  await page.goto('/');
+  test.skip(await page.locator('#fatal-error').isVisible(), 'System navigation requires WebGL');
+
+  await page.keyboard.press('f');
+  await expect(page.locator('#system-selector')).toBeFocused();
+  await page.locator('#system-selector').selectOption('solara');
+  await expect(page.locator('#navigation-status')).toContainText('SYSTEM · SOLARA');
+  await expect(page.locator('#panel-heading')).toHaveText('SYSTEM COMMAND');
+  await expect(page.locator('[data-system-planet="solara-prime"]')).toBeVisible();
+  await expect(page.locator('#back-view')).toBeEnabled();
+
+  await page.locator('[data-system-planet="solara-prime"]').click();
+  await expect(page.locator('#navigation-status')).toContainText('PLANET · SOLARA-PRIME');
+  await expect(page.locator('#back-view')).toHaveText('BACK TO SYSTEM');
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#navigation-status')).toContainText('SYSTEM · SOLARA');
+  await expect(page.locator('#panel-heading')).toHaveText('SYSTEM COMMAND');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#navigation-status')).toContainText('GALAXY VIEW');
+  await expect(page.locator('#system-selector')).toHaveValue('');
+  await expect(page.locator('#back-view')).toBeDisabled();
+});
+
 test('saves and restores the current campaign from the HUD', async ({ page }) => {
   await page.goto('/');
   await page.locator('#save-game').click();
