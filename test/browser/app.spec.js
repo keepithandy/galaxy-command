@@ -45,6 +45,7 @@ test('advances a seeded campaign and exposes the current turn', async ({ page })
   await page.locator('#advance-turn').click();
   await expect(page.locator('#navigation-status')).toContainText('TURN 2');
   await expect(page.locator('#navigation-status')).toContainText('PLANETS UPDATED');
+  await expect(page.locator('#navigation-status')).toContainText(/\+\d+ CR.*\+\d+ RP/);
 });
 
 test('navigates galaxy, system, and planet views with keyboard-accessible controls', async ({ page }) => {

@@ -1019,6 +1019,8 @@ function advanceTurn() {
   const activePanelMode = panel.classList.contains('open') ? panel.dataset.mode : null;
   const report = simulateTurn(gameState).lastTurnReport;
   const fleetSummary = report.fleetsMoved.length ? ` · ${report.fleetsMoved.length} FLEETS MOVED` : '';
+  const playerIncome = report.factionIncome[gameState.playerFaction] ?? { credits: 0, research: 0 };
+  const incomeSummary = ` · +${playerIncome.credits} CR · +${playerIncome.research} RP`;
   const offerResolutions = report.diplomacyUpdated
     .map((update) => update.offerResolution)
     .filter(Boolean);
@@ -1033,7 +1035,7 @@ function advanceTurn() {
     vassalageCount ? `${vassalageCount} VASSALAGE${vassalageCount === 1 ? '' : 'S'} ESTABLISHED` : null,
     rejectedCount ? `${rejectedCount} OFFER${rejectedCount === 1 ? '' : 'S'} REJECTED` : null,
   ].filter(Boolean).map((summary) => ` · ${summary}`).join('');
-  navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${fleetSummary}${diplomacySummary}`;
+  navigationStatus.textContent = `${navigationLabel(strategicMap.state)} · ${report.planetsUpdated.length} PLANETS UPDATED${incomeSummary}${fleetSummary}${diplomacySummary}`;
   syncGalaxyVisuals();
   if (activePanelMode === 'diplomacy') showDiplomacy();
   else if (activePanelMode === 'system' && strategicMap.state.selectedSystem) {

@@ -6,9 +6,9 @@ Current build: `0.0.3` — Galaxy Renderer v2.1 System View
 
 ## Current milestone
 
-Phases 1–3 are delivered: the interactive 3D galaxy, strategic navigation/map, and deterministic world simulation now work together. Players can move between galaxy, system, and planet focus; inspect live planet and fleet state; advance deterministic turns; use faction filters; and read territory ownership directly from the map. Versioned persistence and the first accessibility/performance release gates have also been delivered ahead of their broader roadmap phases.
+Phases 1–3 are delivered: the interactive 3D galaxy, strategic navigation/map, and deterministic world simulation now work together. Players can move between galaxy, system, and planet focus; inspect live planet and fleet state; advance deterministic turns; use faction filters; and read territory ownership directly from the map. Turn production now also credits and funds research for every faction, providing a small shared-economy foundation for Phase 5. Versioned persistence and the first accessibility/performance release gates have also been delivered ahead of their broader roadmap phases.
 
-Phase 4 — Factions & Diplomacy — is in progress. Phases 4A–4C now provide canonical bilateral relationships, deterministic diplomatic actions and drift, treaty proposals, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, vassalage, release and independence lifecycles, save migration, and an interactive diplomacy HUD. Autonomous diplomatic AI remains for Phase 4D.
+Phase 4 — Factions & Diplomacy — is complete. Phases 4A–4D provide canonical bilateral relationships, deterministic diplomatic actions and drift, treaty proposals, non-aggression pacts, alliances, treaty expiry and breaking, war declarations, negotiated peace, vassalage, release and independence lifecycles, autonomous AI diplomacy, save migration, and an interactive diplomacy HUD.
 
 Galaxy Renderer v2.1 adds a persistent, dedicated System View scene layer without rebuilding the galaxy. Selected systems expose spatial planet, ownership, resource, strategic-value, and fleet cues; a keyboard-accessible system selector; and camera-bookmarked back navigation. The command surface remains observational and does not introduce conquest, economy, or diplomacy mechanics.
 

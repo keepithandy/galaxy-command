@@ -15,6 +15,7 @@ import {
   performDiplomaticAction,
   proposeTreaty,
   releaseVassal,
+  runAutonomousDiplomacy,
 } from '../src/core/diplomacy.js';
 import { assertStateInvariants, createGameState } from '../src/core/gameState.js';
 import { setWar, simulateTurn } from '../src/core/simulation.js';
@@ -330,4 +331,21 @@ test('invariants reject multiple overlords for one subject', () => {
   second.stance = 'VASSAL';
 
   assert.throws(() => assertStateInvariants(state), /multiple overlords/);
+});
+
+test('autonomous diplomacy is deterministic, uses public commands, and is included in turn reports', () => {
+  const first = createGameState(96);
+  const second = createGameState(96);
+
+  const firstDecisions = runAutonomousDiplomacy(first);
+  const secondDecisions = runAutonomousDiplomacy(second);
+  assert.deepEqual(firstDecisions, secondDecisions);
+  assert.deepEqual(first, second);
+  assert.ok(firstDecisions.length > 0);
+  assert.ok(first.events.some((event) => ['DIPLOMATIC_ACTION', 'TREATY_PROPOSED', 'WAR_DECLARED'].includes(event.type)));
+
+  const state = createGameState(97);
+  simulateTurn(state);
+  assert.ok(Array.isArray(state.lastTurnReport.diplomacyAi));
+  assertStateInvariants(state);
 });

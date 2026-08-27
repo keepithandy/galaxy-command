@@ -1,7 +1,7 @@
 import { assertStateInvariants, recordEvent } from './gameState.js';
 import { createSeededRandom } from './galaxyGeneration.js';
 import { advanceFleetMovement } from './fleetMovement.js';
-import { advanceDiplomacy, setWarState } from './diplomacy.js';
+import { advanceDiplomacy, runAutonomousDiplomacy, setWarState } from './diplomacy.js';
 
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
@@ -21,7 +21,7 @@ export function simulateTurn(state) {
   assertStateInvariants(state);
   state.turn += 1;
   state.year = Math.floor((state.turn - 1) / 12) + 1;
-  const report = { turn: state.turn, year: state.year, planetsUpdated: [], factionIncome: {}, fleetsMoved: [], diplomacyUpdated: [] };
+  const report = { turn: state.turn, year: state.year, planetsUpdated: [], factionIncome: {}, fleetsMoved: [], diplomacyUpdated: [], diplomacyAi: [] };
 
   for (const planet of Object.values(state.planets).sort((left, right) => left.id.localeCompare(right.id))) {
     const random = planetRandom(state, planet.id);
@@ -43,15 +43,13 @@ export function simulateTurn(state) {
       planet.stability = clamp(planet.stability - 1);
     }
 
-    if (planet.faction === state.playerFaction) {
-      const credits = Math.floor(production + resourceYield);
-      const research = Math.floor(Math.max(1, planet.industry * 0.015));
-      state.factions[state.playerFaction].credits += credits;
-      state.factions[state.playerFaction].research += research;
-      report.factionIncome[state.playerFaction] ??= { credits: 0, research: 0 };
-      report.factionIncome[state.playerFaction].credits += credits;
-      report.factionIncome[state.playerFaction].research += research;
-    }
+    const credits = Math.floor(production + resourceYield);
+    const research = Math.floor(Math.max(1, planet.industry * 0.015));
+    state.factions[planet.faction].credits += credits;
+    state.factions[planet.faction].research += research;
+    report.factionIncome[planet.faction] ??= { credits: 0, research: 0 };
+    report.factionIncome[planet.faction].credits += credits;
+    report.factionIncome[planet.faction].research += research;
 
     report.planetsUpdated.push({ id: planet.id, development: planet.development, population: planet.population });
   }
@@ -62,6 +60,7 @@ export function simulateTurn(state) {
 
   report.fleetsMoved = advanceFleetMovement(state);
   report.diplomacyUpdated = advanceDiplomacy(state);
+  report.diplomacyAi = runAutonomousDiplomacy(state);
 
   recordEvent(state, 'TURN_ADVANCED', { year: state.year });
   state.history.push({ turn: state.turn, year: state.year });

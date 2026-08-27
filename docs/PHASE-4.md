@@ -12,6 +12,6 @@ Vassalage is a permanent bilateral status rather than an expiring treaty. Establ
 
 Economic tribute is intentionally deferred to Phase 5, where it can use the shared economy and income model.
 
-## Next slice
+## Delivered slice
 
-Phase 4D adds autonomous diplomatic AI. AI decisions must use the same public availability and action APIs as the player, process factions in stable order, remain deterministic for a given campaign state, and emit visible events for every action.
+- **4D — Autonomous diplomacy:** non-player factions make stable-order, deterministic treaty, warning, war, and peace decisions through the same public availability and action APIs as the player. Decisions are recorded in turn reports and emit the normal visible diplomacy events.

@@ -548,6 +548,50 @@ export function advanceDiplomacy(state) {
   return updates;
 }
 
+// AI diplomacy deliberately delegates to the public command APIs. This keeps
+// autonomous factions subject to the same costs, cooldowns, treaty rules, and
+// event history as a player-issued command.
+export function runAutonomousDiplomacy(state) {
+  const decisions = [];
+  const factionIds = Object.keys(state.factions).sort();
+
+  for (const actorId of factionIds) {
+    if (actorId === state.playerFaction || getVassalageRole(state, actorId).overlordId) continue;
+    const targetId = factionIds
+      // Player-facing diplomacy remains an explicit player command; AI factions
+      // autonomously negotiate with one another.
+      .filter((candidateId) => candidateId !== actorId && candidateId !== state.playerFaction && !getVassalageRole(state, candidateId).overlordId)
+      .sort((left, right) => {
+        const leftRelationship = getRelationship(state, actorId, left);
+        const rightRelationship = getRelationship(state, actorId, right);
+        return leftRelationship.opinion - rightRelationship.opinion || left.localeCompare(right);
+      })[0];
+    if (!targetId) continue;
+
+    const relationship = getRelationship(state, actorId, targetId);
+    let result = null;
+    if (relationship.atWar && state.turn - (relationship.warStartedTurn ?? state.turn) >= 3) {
+      if (canProposeTreaty(state, actorId, targetId, 'PEACE').allowed) {
+        result = proposeTreaty(state, actorId, targetId, 'PEACE');
+      }
+    } else if (!relationship.atWar && relationship.opinion <= -55) {
+      if (canPerformDiplomaticAction(state, actorId, targetId, 'ISSUE_WARNING').allowed) {
+        result = performDiplomaticAction(state, actorId, targetId, 'ISSUE_WARNING');
+      } else if (canSetWarState(state, actorId, targetId, true).allowed) {
+        result = { ok: setWarState(state, actorId, targetId, true), actionId: 'DECLARE_WAR' };
+      }
+    } else if (!relationship.atWar && relationship.opinion >= 0 && relationship.trust >= 40) {
+      if (!hasTreaty(relationship, 'NON_AGGRESSION') && canProposeTreaty(state, actorId, targetId, 'NON_AGGRESSION').allowed) {
+        result = proposeTreaty(state, actorId, targetId, 'NON_AGGRESSION');
+      } else if (canPerformDiplomaticAction(state, actorId, targetId, 'IMPROVE_RELATIONS').allowed) {
+        result = performDiplomaticAction(state, actorId, targetId, 'IMPROVE_RELATIONS');
+      }
+    }
+    if (result?.ok) decisions.push({ actorId, targetId, actionId: result.actionId ?? result.treatyType, ok: true });
+  }
+  return decisions;
+}
+
 function assertRange(value, name, min, max) {
   if (!Number.isFinite(value) || value < min || value > max) {
     throw new Error(`Invalid ${name}: expected a finite value between ${min} and ${max}`);

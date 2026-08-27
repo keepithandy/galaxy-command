@@ -62,6 +62,35 @@ test('turn simulation is deterministic and exposes a report', () => {
   assertStateInvariants(first);
 });
 
+test('every faction receives deterministic income from its owned planets', () => {
+  const state = createSeededState(808);
+  const before = Object.fromEntries(Object.entries(state.factions).map(([id, faction]) => [id, {
+    credits: faction.credits,
+    research: faction.research,
+  }]));
+  const expected = {};
+  for (const planet of Object.values(state.planets)) {
+    expected[planet.faction] ??= { credits: 0, research: 0 };
+    expected[planet.faction].credits += Math.floor(Math.max(1, planet.industry * 0.08) + Math.max(1, planet.resources * 0.06));
+    expected[planet.faction].research += Math.floor(Math.max(1, planet.industry * 0.015));
+  }
+
+  const report = simulateTurn(state).lastTurnReport;
+  assert.deepEqual(report.factionIncome, expected);
+  for (const [factionId, income] of Object.entries(expected)) {
+    const diplomacySpend = state.events
+      .filter((event) => event.turn === state.turn)
+      .reduce((total, event) => {
+        if (event.type === 'DIPLOMATIC_ACTION' && event.payload.actorId === factionId) return total + event.payload.cost;
+        if (event.type === 'TREATY_PROPOSED' && event.payload.factionA === factionId) return total + event.payload.cost;
+        return total;
+      }, 0);
+    assert.equal(state.factions[factionId].credits, before[factionId].credits + income.credits - diplomacySpend);
+    assert.equal(state.factions[factionId].research, before[factionId].research + income.research);
+  }
+  assertStateInvariants(state);
+});
+
 test('simulation keeps world values within invariants over a long campaign', () => {
   const state = createSeededState(77);
 
